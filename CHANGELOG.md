@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.0.3
+
+### New features
+
+- **Human-like typing** — `typeTextXPath()` uses BiDi key actions with random delays per grapheme, pause after spaces/punctuation
+- **Human-like mouse movement** — cursor follows Bezier curve with jitter, overshoot on long moves, settle-back on close moves
+- **Virtual mouse cursor** — visible red dot injected into page for debugging mouse path
+- **`clickXPath()` rewrite** — resolves target coordinates via `getBoundingClientRect`, moves mouse to element center with jitter, then clicks
+- **`PasteText` global clipboard lock** — `pasteTextXPath()` now uses process-wide mutex to serialize clipboard + Ctrl+V critical section, safe for future multi-profile concurrent runs
+- **Host clipboard writer** — `writeHostClipboardText()` sets Windows clipboard via PowerShell file-based approach, avoids page-context clipboard API race
+- **`.flow pastetext` command** — `pastetext "//xpath" "text"` in `run profile` block
+
+### Changes
+
+- `PageAutomation.clickXPath()` — rewritten to use coordinate-based BiDi pointer actions instead of `node.click()`
+- `PageAutomation.typeXPath()` — now delegates to `typeTextXPath()` with BiDi key actions
+- `PageAutomation.pasteTextXPath()` — clipboard write moved to host process, wrapped in global lock
+- `BidiClient` — added `performActions()` and `releaseActions()` public methods
+- Removed `PageAutomation.writeClipboardText()` — no longer using in-page clipboard API
+
 ## 0.0.2
 
 ### New features
