@@ -5,7 +5,7 @@ Standalone TypeScript CLI for Donut Browser Camoufox profiles.
 Flow:
 
 ```text
-Donut API -> select Camoufox profile -> launch profile -> get debugging port -> connect BiDi -> open Threads -> count interactive elements
+Donut API -> select Camoufox profile -> launch profile -> get debugging port -> connect BiDi -> run TS or .flow script
 ```
 
 ## Requirements
@@ -27,16 +27,28 @@ Edit `.env` if needed.
 
 ## Run
 
-Interactive profile selection:
+Interactive profile/script selection:
 
 ```bash
-pnpm dev threads
+pnpm dev
 ```
 
-With profile id:
+Built-in Threads script:
 
 ```bash
 pnpm dev threads --profile <profile-id>
+```
+
+Run a `.flow` script:
+
+```bash
+pnpm dev run --profile <profile-id> --script ./scripts/example.flow
+```
+
+Override `.flow` inputs:
+
+```bash
+pnpm dev run --profile <profile-id> --script ./scripts/example.flow --input startUrl=https://example.com --input mode=safe
 ```
 
 Override API:
@@ -52,10 +64,43 @@ pnpm dev threads --api http://127.0.0.1:10108
 --token <token>             Optional bearer token
 --profile <profile-id>      Skip selector
 --headless <boolean>        Launch profile headless
---kill-after <boolean>      Kill profile after task
 --connect-timeout <ms>      WebSocket connect timeout
 --command-timeout <ms>      BiDi command timeout
+--input <key=value>         Set .flow input value; repeatable
 ```
+
+## .flow scripts
+
+`.flow` supports 3 lifecycle blocks:
+
+```flow
+inputs {
+  startUrl: input = "https://example.com"
+  count: number = 3
+  uploadFile: file
+  outputDir: folder
+  dryRun: checkbox = false
+  mode: comboBox ["fast", "safe"] = "safe"
+}
+
+before run profile {
+  log "Before launch: ${mode}"
+}
+
+run profile {
+  nav "${startUrl}"
+  waitLoad
+  info
+}
+
+after kill profile {
+  log "Browser killed"
+}
+```
+
+Inputs render in one CLI GUI frame. Use Tab/arrow keys to move, Left/Right to toggle/cycle/open path picker, Enter to submit/open.
+
+Legacy flat `.flow` command files still run as main logic.
 
 ## Build
 

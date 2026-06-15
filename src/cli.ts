@@ -20,7 +20,22 @@ type CliOptions = {
   connectTimeout?: string;
   commandTimeout?: string;
   script?: string;
+  input?: string[];
 };
+
+function collectInput(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function parseInputOverrides(values: string[] | undefined): Record<string, string> {
+  const overrides: Record<string, string> = {};
+  for (const value of values ?? []) {
+    const separator = value.indexOf('=');
+    if (separator <= 0) throw new Error(`Invalid --input value "${value}". Expected key=value.`);
+    overrides[value.slice(0, separator)] = value.slice(separator + 1);
+  }
+  return overrides;
+}
 
 // Shared options helper
 function addCommonOptions(cmd: Command): Command {
@@ -30,7 +45,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--profile <profile-id>', 'Donut profile id')
     .addOption(new Option('--headless <boolean>', 'Launch profile headless').default(undefined))
     .option('--connect-timeout <ms>', 'BiDi connect timeout in milliseconds')
-    .option('--command-timeout <ms>', 'BiDi command timeout in milliseconds');
+    .option('--command-timeout <ms>', 'BiDi command timeout in milliseconds')
+    .option('--input <key=value>', 'Set .flow input value; repeatable', collectInput, []);
 }
 
 async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise<void> {
@@ -51,6 +67,7 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
     bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
     bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
     scriptSpec: scriptSpec ?? options.script ?? await selectScript(),
+    scriptInputs: parseInputOverrides(options.input),
   };
 
   await runWorkflow(runnerOptions);

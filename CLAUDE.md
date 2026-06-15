@@ -4,77 +4,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Standalone CLI that launches Donut Browser Camoufox profiles and automates them over WebDriver BiDi protocol. Architecture: **runtime/runner** (core) + **user scripts** (automation logic).
+Standalone TypeScript CLI that launches Donut Browser Camoufox profiles and automates them over WebDriver BiDi. Core split:
 
-**Prerequisites:** Donut Browser running with REST API enabled at `http://127.0.0.1:10108`. At least one Camoufox profile.
+- `src/cli.ts` parses commands/options with `commander`, then calls the runtime runner.
+- `src/runtime/runner.ts` owns profile lifecycle: load script, collect `.flow` inputs, select profile, run pre-launch flow block, launch profile, wait ready, connect BiDi, run main script, close BiDi, kill profile, then run post-kill flow block.
+- User automation lives in either TypeScript scripts (`export default async function(ctx)`) or `.flow` DSL scripts.
+
+Prerequisites: Donut Browser running with REST API enabled at `http://127.0.0.1:10108`; at least one Camoufox profile.
 
 ## Commands
 
 ```bash
 pnpm install              # Install dependencies
-pnpm build                # TypeScript compile (tsc)
-pnpm start <command>      # Run via tsx (dev mode)
 pnpm typecheck            # Type-check without emit
+pnpm build                # TypeScript compile to dist/
+pnpm start                # Run CLI via tsx, interactive script/profile selection
+pnpm start threads        # Run built-in Threads workflow
+pnpm start run --script ./scripts/example.flow --profile <id>
 ```
 
-## Running
+No test runner is configured in `package.json`; use `pnpm typecheck` as current verification. There is no single-test command until a test framework is added.
+
+## Running Workflows
 
 ```bash
-# Generic runner - user script
-pnpm start run --profile <id> --script threads
-pnpm start run --profile <id> --script ./scripts/my-task.ts
+# Built-in workflow
+pnpm start threads --profile <profile-id>
 
-# Built-in threads command
-pnpm start threads --profile <id>
+# TypeScript workflow
+pnpm start run --profile <profile-id> --script ./scripts/my-task.ts
 
-# Interactive profile selection (omit --profile)
-pnpm start threads
+# .flow workflow
+pnpm start run --profile <profile-id> --script ./scripts/example.flow
+
+# Override .flow inputs
+pnpm start run --profile <profile-id> --script ./scripts/example.flow --input startUrl=https://example.com --input mode=safe
+
+# Omit --profile for interactive Camoufox profile selection
+pnpm start run --script ./scripts/example.flow
+```
+
+Common options:
+
+```text
+--api <url>                 Donut API base URL
+--token <token>             Optional bearer token
+--profile <profile-id>      Skip profile selector
+--headless <boolean>        Launch profile headless
+--connect-timeout <ms>      BiDi connect timeout
+--command-timeout <ms>      BiDi command timeout
+--input <key=value>         Set .flow input value; repeatable
 ```
 
 ## Architecture
 
-```
-src/
-  cli.ts                    # CLI entry point (thin, delegates to runner)
-  runtime/
-    types.ts                # WorkflowContext, WorkflowScript types
-    page-automation.ts      # PageAutomation class (high-level BiDi wrapper)
-    script-loader.ts        # Dynamic import of user scripts
-    runner.ts               # Core runner: launch → wait ready → connect BiDi → call script
-  donut/
-    api-client.ts           # Donut REST API client (list, get, run, kill, waitForReady)
-    api-types.ts            # Zod schemas + types for API responses
-    profile-selector.ts     # CLI interactive profile picker
-  bidi/
-    bidi-client.ts          # Raw WebDriver BiDi WebSocket client
-    bidi-types.ts           # BiDi protocol types
-    commands.ts             # Remote value unwrapping
-  automation/
-    interactive-elements.ts # JS expressions for counting interactive elements
-    threads-task.ts         # Legacy hard-coded task (deprecated, use scripts/threads.ts instead)
-  config/
-    load-config.ts          # .env + CLI flag loader
-    types.ts                # AppConfig type
-  utils/
-    errors.ts               # AppError class
-    logger.ts               # Console logger
-    retry.ts                # sleep() helper
-scripts/
-  threads.ts                # Built-in threads workflow script
-```
+### CLI/config layer
 
-## Key Design Patterns
+- `src/cli.ts` defines root, `run`, and `threads` commands.
+- `src/config/load-config.ts` merges CLI flags with `.env` values and validates via `zod`.
+- `src/runtime/script-loader.ts` resolves script specs in this order: built-in name (`threads`), absolute path, path relative to `cwd`. It loads TS scripts by dynamic import and `.flow` scripts via the DSL parser.
 
-**Runner flow:** The runner (`src/runtime/runner.ts`) handles all profile lifecycle:
-1. List/select Camoufox profile via Donut API
-2. Launch profile (`GET /v1/profiles/{id}/run`)
-3. Poll profile status until `is_running=true` (`GET /v1/profiles/{id}`)
-4. Connect BiDi WebSocket to `ws://127.0.0.1:{port}/session`
-5. Initialize `PageAutomation` (session + context)
-6. Dynamic-import user script, call with `WorkflowContext`
-7. Cleanup (close BiDi, optional kill profile)
+### Donut profile lifecycle
 
-**User scripts:** Export default async function receiving `WorkflowContext`:
+- `src/donut/api-client.ts` wraps Donut REST API.
+- `src/donut/profile-selector.ts` filters/selects Camoufox profiles.
+- `src/runtime/runner.ts` is the only place that should orchestrate profile launch/connect/cleanup.
+
+Runner flow for `.flow`:
+
+1. Load `.flow` and parse input definitions/blocks.
+2. Collect inputs in one terminal UI frame (`src/ui/run-flow-input-form.ts`).
+3. List/select profile.
+4. Execute `before run profile` block without page/BiDi access.
+5. Launch profile with `GET /v1/profiles/{id}/run`.
+6. Wait until profile is running.
+7. Connect WebDriver BiDi at `ws://127.0.0.1:{remote_debugging_port}/session` unless API supplies `ws_url`.
+8. Initialize `PageAutomation`.
+9. Execute TS script or `.flow` `run profile` block.
+10. Close BiDi, kill profile, execute `.flow` `after kill profile` block.
+
+### BiDi/page automation
+
+- `src/bidi/bidi-client.ts` is the raw WebDriver BiDi WebSocket client.
+- `src/bidi/commands.ts` unwraps remote values.
+- `src/runtime/page-automation.ts` provides high-level methods used by TS scripts and `.flow` commands: `goto()`, `waitForLoad()`, `evaluate()`, `info()`, XPath helpers (`waitForXPath()`, `clickXPath()`, `typeXPath()`, `textXPath()`), and interactive element helpers.
+
+Camoufox notes:
+
+- No CDP `/json`, `/json/version`, `/json/list`; use BiDi only.
+- BiDi session flow: connect → `session.new` → `browsingContext.getTree` → use first context ID.
+- Response discrimination: success responses have `type: "success"`; protocol errors have `type: "error"`.
+
+## Script Types
+
+### TypeScript scripts
+
+Default export function receiving `WorkflowContext`:
+
 ```ts
 import type { WorkflowContext } from '../src/runtime/types.js';
 
@@ -86,26 +112,47 @@ export default async function(ctx: WorkflowContext) {
 }
 ```
 
-**PageAutomation API:** High-level wrapper over raw BiDi — `goto()`, `waitForLoad()`, `evaluate()`, `info()`, `countInteractiveElements()`, `getButtons()`. Raw BiDi client available via `ctx.bidi`.
+`WorkflowContext` includes `profile`, `run`, `page`, `bidi`, `log`, `sleep`, `inputs`, and stringified `args`.
 
-**Script resolution:** `src/runtime/script-loader.ts` resolves script spec: built-in name (`threads` → `scripts/threads.ts`) → absolute path → relative to cwd. Uses `pathToFileURL()` for Windows compatibility.
+### `.flow` scripts
 
-## Donut API (REST)
+`.flow` supports lifecycle blocks:
 
-Base: `http://127.0.0.1:10108/v1` — no auth required.
+```flow
+inputs {
+  startUrl: input = "https://example.com"
+  mode: comboBox ["fast", "safe"] = "safe"
+  enabled: checkbox = true
+}
+
+before run profile {
+  log "Before launch: ${mode}"
+}
+
+run profile {
+  nav "${startUrl}"
+  waitLoad
+  info
+}
+
+after kill profile {
+  log "Browser killed"
+}
+```
+
+Supported input types: `input` (auto text/number), `text`, `number`, `file`, `folder`, `checkbox`, `comboBox`. Inputs are interpolated as `${name}` inside command args. Full user docs live in `docs/flow-scripting.md`.
+
+Legacy flat `.flow` scripts without block headers are still treated as main logic.
+
+## Donut API Details
+
+Base URL default: `http://127.0.0.1:10108/v1`.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/v1/profiles` | GET | List profiles |
-| `/v1/profiles/{id}` | GET | Get profile (check `is_running`, `process_id`) |
-| `/v1/profiles/{id}/run` | GET | Launch browser (query params: `url`, `headless`) |
+| `/v1/profiles/{id}` | GET | Get profile status/details |
+| `/v1/profiles/{id}/run` | GET | Launch browser; query params include `url`, `headless` |
 | `/v1/profiles/{id}/kill` | POST | Kill browser process |
 
-**Important:** The run endpoint is **GET** with query params, not POST with JSON body. See `api-donutbrowser-guide.md` for full API reference.
-
-## Camoufox BiDi Notes
-
-- No CDP `/json`, `/json/version`, `/json/list` — Camoufox returns 404 for these
-- BiDi endpoint: `ws://127.0.0.1:{remote_debugging_port}/session`
-- Session flow: connect → `session.new` → `browsingContext.getTree` → use first context ID
-- Response type discrimination: `{"type":"success","id":N,"result":...}` vs `{"type":"error",...}`
+Important: run endpoint is GET with query params, not POST JSON.

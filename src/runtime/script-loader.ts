@@ -1,13 +1,19 @@
 import { readdir } from 'fs/promises';
-import { resolve, isAbsolute, join, relative, basename, sep } from 'path';
+import { resolve, isAbsolute, join, relative, basename, extname, sep } from 'path';
 import { pathToFileURL } from 'url';
 import { select } from '@inquirer/prompts';
 import { AppError } from '../utils/errors.js';
+import { loadFlowProgram, loadFlowScript } from './dsl/executor.js';
+import type { FlowProgram } from './dsl/types.js';
 import type { WorkflowScript } from './types.js';
 
 export const BUILTIN_SCRIPTS: Record<string, string> = {
   threads: 'scripts/threads.ts',
 };
+
+export type LoadedWorkflow =
+  | { kind: 'ts'; run: WorkflowScript; filePath: string }
+  | { kind: 'flow'; program: FlowProgram; filePath: string };
 
 /**
  * Resolve script spec to an absolute file path.
@@ -47,7 +53,7 @@ async function listScriptFiles(): Promise<string[]> {
   }
 
   return entries
-    .filter((entry) => entry.endsWith('.ts'))
+    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.flow'))
     .map((entry) => toPosixPath(relative(process.cwd(), join(scriptsDir, entry))))
     .sort((a, b) => a.localeCompare(b));
 }
@@ -63,13 +69,13 @@ export async function selectScript(): Promise<string> {
     ...scriptFiles
       .filter((file) => !builtinPaths.has(file))
       .map((file) => ({
-        name: basename(file, '.ts'),
+        name: `${basename(file, extname(file))} (${extname(file).slice(1)})`,
         value: file,
       })),
   ];
 
   if (choices.length === 0) {
-    throw new AppError('No workflow scripts found. Add a .ts file in scripts/ or pass --script <path>.');
+    throw new AppError('No workflow scripts found. Add a .ts or .flow file in scripts/ or pass --script <path>.');
   }
 
   return select({
@@ -78,12 +84,37 @@ export async function selectScript(): Promise<string> {
   });
 }
 
+export async function loadWorkflow(spec: string): Promise<LoadedWorkflow> {
+  const filePath = resolveScriptPath(spec);
+  if (filePath.endsWith('.flow')) {
+    try {
+      return { kind: 'flow', program: await loadFlowProgram(filePath), filePath };
+    } catch (error) {
+      throw new AppError(`Failed to load flow script: ${filePath}`, error);
+    }
+  }
+
+  return { kind: 'ts', run: await importWorkflowScript(spec, filePath), filePath };
+}
+
 /**
  * Dynamically import a workflow script.
  * Returns the default export if it's a function.
  */
 export async function loadScript(spec: string): Promise<WorkflowScript> {
   const filePath = resolveScriptPath(spec);
+  if (filePath.endsWith('.flow')) {
+    try {
+      return await loadFlowScript(filePath);
+    } catch (error) {
+      throw new AppError(`Failed to load flow script: ${filePath}`, error);
+    }
+  }
+
+  return importWorkflowScript(spec, filePath);
+}
+
+async function importWorkflowScript(spec: string, filePath: string): Promise<WorkflowScript> {
   const fileUrl = pathToFileURL(filePath).href;
 
   let mod: unknown;

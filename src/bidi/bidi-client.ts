@@ -62,7 +62,7 @@ export class BidiClient {
     const result = await this.command<ScriptEvaluateResult>('script.evaluate', {
       target: { context: contextId },
       expression,
-      awaitPromise: false,
+      awaitPromise: true,
     });
     return fromRemoteValue(result.result);
   }

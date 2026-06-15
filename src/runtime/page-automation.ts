@@ -61,6 +61,79 @@ export class PageAutomation {
     return JSON.parse(str) as { title: string; url: string };
   }
 
+  /** Check whether an XPath matches at least one element */
+  async existsXPath(xpath: string): Promise<boolean> {
+    return Boolean(await this.evaluate(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      return Boolean(document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue);
+    })()`));
+  }
+
+  /** Wait until an XPath matches at least one element */
+  async waitForXPath(xpath: string, timeoutMs = 10000): Promise<void> {
+    const found = await this.evaluate<boolean>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const timeoutMs = ${JSON.stringify(timeoutMs)};
+      return new Promise((resolve) => {
+        const deadline = Date.now() + timeoutMs;
+        const check = () => {
+          const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if (node) return resolve(true);
+          if (Date.now() >= deadline) return resolve(false);
+          setTimeout(check, 200);
+        };
+        check();
+      });
+    })()`);
+    if (!found) throw new Error(`Timed out waiting for XPath: ${xpath}`);
+  }
+
+  /** Click first element matching XPath */
+  async clickXPath(xpath: string): Promise<void> {
+    const clicked = await this.evaluate<boolean>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!(node instanceof HTMLElement)) return false;
+      node.scrollIntoView({ block: 'center', inline: 'center' });
+      node.focus();
+      node.click();
+      return true;
+    })()`);
+    if (!clicked) throw new Error(`XPath not found or not clickable: ${xpath}`);
+  }
+
+  /** Type text into first input-like element matching XPath */
+  async typeXPath(xpath: string, text: string): Promise<void> {
+    const typed = await this.evaluate<boolean>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const text = ${JSON.stringify(text)};
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!(node instanceof HTMLElement)) return false;
+      node.scrollIntoView({ block: 'center', inline: 'center' });
+      node.focus();
+      if ('value' in node) {
+        node.value = text;
+      } else {
+        node.textContent = text;
+      }
+      node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      node.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    if (!typed) throw new Error(`XPath not found or not typeable: ${xpath}`);
+  }
+
+  /** Read text from first element matching XPath */
+  async textXPath(xpath: string): Promise<string> {
+    const text = await this.evaluate<string | null>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      return node ? (node.textContent ?? '') : null;
+    })()`);
+    if (text === null) throw new Error(`XPath not found: ${xpath}`);
+    return text;
+  }
+
   /** Count all interactive elements (a, button, input, etc.) */
   async countInteractiveElements(): Promise<InteractiveElementsResult> {
     return this.evaluate<InteractiveElementsResult>(countInteractiveElementsExpression);
