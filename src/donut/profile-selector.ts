@@ -1,6 +1,6 @@
-import { select, isCancel } from '@clack/prompts';
 import { AppError, CliBackError } from '../utils/errors.js';
 import { globalAbort } from '../utils/abort.js';
+import { runListPicker } from '../ui/list-picker.js';
 import type { ApiProfile } from './api-types.js';
 
 export function camoufoxProfiles(profiles: ApiProfile[]): ApiProfile[] {
@@ -24,13 +24,13 @@ export async function selectCamoufoxProfile(profiles: ApiProfile[], defaultProfi
     })),
   ];
 
-  const selectedVal = await select({
-    message: `Select Camoufox profile (${choices.length} found)`,
+  const selectedVal = await runListPicker({
+    title: `Select Camoufox profile (${choices.length} found)`,
     options: selectChoices,
     initialValue: defaultProfileId ?? '__back__',
   });
 
-  if (isCancel(selectedVal) || selectedVal === '__back__') {
+  if (selectedVal === undefined || selectedVal === '__back__') {
     throw globalAbort.signal.aborted ? new AppError('Aborted') : new CliBackError();
   }
 

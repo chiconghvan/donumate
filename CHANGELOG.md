@@ -4,7 +4,7 @@
 
 ### New features
 
-- **`.flow` expanded command set** — added `navUrl`, tab controls, history/reload/URL helpers, XPath read/count helpers, mouse move, scroll, JS execution, file upload, HTTP request, and HTTP download commands.
+- **`.flow` expanded command set** — added `navUrl`, tab controls, history/reload/URL helpers, XPath read/count helpers, mouse move, scroll, JS execution, file upload, HTTP request, HTTP download, and `fileReadAllText` commands.
 - **Loop controls** — added `nextLoop` and `exitLoop` for `while`/`for` bodies.
 - **Assignment shorthand** — added `set ${name}=expr` while keeping `set name = expr` and `name = expr` compatible.
 - **Result variables** — commands now expose values like `${pageUrl}`, `${elementText}`, `${elementAttribute}`, `${elementCount}`, `${jsResult}`, `${httpStatus}`, `${httpBody}`, `${downloadPath}`, and `${downloadBytes}`.

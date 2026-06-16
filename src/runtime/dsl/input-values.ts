@@ -1,5 +1,6 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
+import * as XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
 import type { FlowInputDefinition, FlowInputValue } from './types.js';
 
@@ -26,6 +27,7 @@ export async function coerceAndValidateInputs(
   const values: Record<string, FlowInputValue> = {};
   for (const input of definitions) {
     values[input.name] = await coerceAndValidateInput(input, rawValues[input.name] ?? initialInputText(input, {}));
+    if (input.type === 'inputExcelFile') values[`${input.name}TotalRow`] = readExcelTotalRows(String(values[input.name]));
   }
   return values;
 }
@@ -49,7 +51,8 @@ export async function coerceAndValidateInput(input: FlowInputDefinition, rawValu
     case 'comboBox':
       if (!input.options?.includes(value)) throw new AppError(`${input.name}: expected one of [${input.options?.join(', ')}], got "${value}".`);
       return value;
-    case 'file': {
+    case 'file':
+    case 'inputExcelFile': {
       const filePath = resolvePath(value);
       const stats = await stat(filePath).catch(() => null);
       if (!stats?.isFile()) throw new AppError(`${input.name}: file not found: ${filePath}`);
@@ -77,4 +80,14 @@ function resolvePath(value: string): string {
     return resolve(process.env.USERPROFILE ?? process.env.HOME ?? process.cwd(), value.slice(1));
   }
   return resolve(process.cwd(), value);
+}
+
+function readExcelTotalRows(filePath: string): number {
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return 0;
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet?.['!ref']) return 0;
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  return range.e.r + 1;
 }

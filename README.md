@@ -88,9 +88,9 @@ before run profile {
 }
 
 run profile {
-  nav "${startUrl}"
-  waitLoad
-  info
+  nav("${startUrl}")
+  waitLoad()
+  info()
 }
 
 after kill profile {
@@ -106,15 +106,15 @@ More `.flow` commands:
 
 ```flow
 run profile {
-  set ${page} = "https://example.com"
-  navUrl "${page}"
-  waitLoad
-  getUrl
-  waitElement "//h1" 10000
-  getElementText "//h1"
-  countElement "//a"
-  scroll 500
-  js "document.title"
+  set page = "https://example.com"
+  navUrl("${page}")
+  waitLoad()
+  getUrl()
+  waitElement("//h1", 10000)
+  getElementText("//h1")
+  countElement("//a")
+  scroll(500)
+  js("document.title")
 
   for i = 0; i < 10; i = i + 1
     if i == 2
@@ -125,8 +125,8 @@ run profile {
 }
 
 before run profile {
-  httpRequest "https://example.com" "GET"
-  httpDownload "https://example.com/image.png" "./downloads/image.png"
+  httpRequest("https://example.com", GET, {})
+  httpDownload("https://example.com/image.png", "./downloads/image.png")
 }
 ```
 

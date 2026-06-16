@@ -12,13 +12,14 @@ import type {
 } from './types.js';
 
 const BLOCK_PATTERNS: Array<{ key: keyof Pick<FlowProgram, 'beforeRunProfile' | 'main' | 'afterKillProfile'>; pattern: RegExp }> = [
-  { key: 'beforeRunProfile', pattern: /^before\s+run\s+profile\s*\{\s*$/i },
-  { key: 'main', pattern: /^run\s+profile\s*\{\s*$/i },
-  { key: 'afterKillProfile', pattern: /^after\s+kill\s+profile\s*\{\s*$/i },
+  { key: 'beforeRunProfile', pattern: /^(?:before(?:\s+run\s+profile)?)\s*\{\s*$/i },
+  { key: 'main', pattern: /^(?:running|run\s+profile)\s*\{\s*$/i },
+  { key: 'afterKillProfile', pattern: /^(?:after(?:\s+kill\s+profile)?)\s*\{\s*$/i },
 ];
+const BLOCK_LABELS = 'before, running, or after';
 
 type ParsedLine = { raw: string; line: string; lineNumber: number; indent: number };
-type ExprToken = { type: 'identifier' | 'number' | 'string' | 'operator' | 'paren' | 'comma' | 'boolean' | 'null'; value: string };
+type ExprToken = { type: 'identifier' | 'number' | 'string' | 'operator' | 'paren' | 'bracket' | 'comma' | 'boolean' | 'null'; value: string };
 
 export type { FlowCommand, FlowInputDefinition, FlowInputKind, FlowInputValue, FlowProgram };
 
@@ -97,14 +98,14 @@ export function parseFlowProgram(source: string): FlowProgram {
         continue;
       }
 
-      throw new AppError(`Line ${item.lineNumber}: expected inputs, before run profile, run profile, or after kill profile block.`);
+      throw new AppError(`Line ${item.lineNumber}: expected inputs, before, running, or after block.`);
     }
 
     blockLines.push(item);
   }
 
   if (currentBlock !== null) flushBlock();
-  if (!sawMain) throw new AppError('Flow script must include a run profile { ... } block.');
+  if (!sawMain) throw new AppError('Flow script must include a running { ... } block.');
 
   return program;
 }
@@ -238,22 +239,18 @@ function parseFlowLine(raw: string, lineNumber: number): FlowCommand | null {
   const line = stripComment(raw).trim();
   if (!line) return null;
 
-  const functionLike = line.match(/^([A-Za-z][\w-]*)\((.*)\)$/);
-  if (functionLike) {
-    return {
-      command: functionLike[1] ?? '',
-      args: splitArgs(functionLike[2] ?? '', lineNumber, ','),
-      lineNumber,
-      raw,
-    };
-  }
+  const functionLike = line.match(/^([A-Za-z][\w-]*)\s*\((.*)\)$/);
+  if (!functionLike) throw new AppError(`Line ${lineNumber}: expected commandName(arg1, arg2).`);
 
-  const [command, ...args] = splitArgs(line, lineNumber);
-  if (!command) return null;
-  return { command, args, lineNumber, raw };
+  return {
+    command: functionLike[1] ?? '',
+    args: splitArgs(functionLike[2] ?? '', lineNumber, ','),
+    lineNumber,
+    raw,
+  };
 }
 
-function parseExpression(text: string, lineNumber: number): FlowExpression {
+export function parseExpression(text: string, lineNumber: number): FlowExpression {
   const parser = new ExpressionParser(tokenizeExpression(text, lineNumber), lineNumber);
   return parser.parse();
 }
@@ -293,6 +290,17 @@ class ExpressionParser {
   }
 
   private parsePrimary(): FlowExpression {
+    let expression = this.parseBase();
+    while (this.peek()?.value === '[') {
+      this.next();
+      const index = this.parseBinary(0);
+      this.expect(']');
+      expression = { type: 'index', object: expression, index };
+    }
+    return expression;
+  }
+
+  private parseBase(): FlowExpression {
     const token = this.next();
     if (!token) throw new AppError(`Line ${this.lineNumber}: expected expression.`);
     if (token.type === 'number') return { type: 'literal', value: Number(token.value) };
@@ -354,11 +362,6 @@ function tokenizeExpression(text: string, lineNumber: number): ExprToken[] {
       index += 1;
       while (index < text.length) {
         const current = text[index] ?? '';
-        if (current === '\\') {
-          value += text[index + 1] ?? '';
-          index += 2;
-          continue;
-        }
         if (current === quote) break;
         value += current;
         index += 1;
@@ -403,6 +406,11 @@ function tokenizeExpression(text: string, lineNumber: number): ExprToken[] {
     }
     if (char === '(' || char === ')') {
       tokens.push({ type: 'paren', value: char });
+      index += 1;
+      continue;
+    }
+    if (char === '[' || char === ']') {
+      tokens.push({ type: 'bracket', value: char });
       index += 1;
       continue;
     }
@@ -499,6 +507,7 @@ function normalizeInputType(value: string, lineNumber: number): FlowInputKind {
   if (normalized === 'string') return 'text';
   if (normalized === 'boolean' || normalized === 'bool') return 'checkbox';
   if (normalized === 'combobox' || normalized === 'combo') return 'comboBox';
+  if (normalized === 'inputexcelfile' || normalized === 'excel') return 'inputExcelFile';
   if (['input', 'text', 'number', 'file', 'folder', 'checkbox'].includes(normalized)) return normalized as FlowInputKind;
   throw new AppError(`Line ${lineNumber}: unknown input type "${value}".`);
 }
@@ -530,7 +539,8 @@ function parseDefaultValue(type: FlowInputKind, text: string, options: string[] 
     case 'input': return autodetectValue(unquoted);
     case 'text':
     case 'file':
-    case 'folder': return unquoted;
+    case 'folder':
+    case 'inputExcelFile': return unquoted;
   }
 }
 
@@ -545,7 +555,7 @@ function autodetectValue(value: string): string | number {
 function unquote(value: string, lineNumber: number): string {
   const trimmed = value.trim();
   const quote = trimmed[0];
-  if ((quote === '"' || quote === "'") && trimmed[trimmed.length - 1] === quote) return trimmed.slice(1, -1).replace(/\\(["'])/g, '$1');
+  if ((quote === '"' || quote === "'") && trimmed[trimmed.length - 1] === quote) return trimmed.slice(1, -1);
   if ((quote === '"' || quote === "'") || trimmed.endsWith('"') || trimmed.endsWith("'")) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
   return trimmed;
 }
@@ -554,7 +564,7 @@ function stripComment(line: string): string {
   let quote: string | null = null;
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
-    if ((char === '"' || char === "'") && line[index - 1] !== '\\') {
+    if (char === '"' || char === "'") {
       quote = quote === char ? null : quote ?? char;
       continue;
     }
@@ -567,19 +577,22 @@ function stripComment(line: string): string {
 function splitArgs(input: string, lineNumber: number, delimiter?: string): string[] {
   const args: string[] = [];
   let current = '';
-  let quote: string | null = null;
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
 
   for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
-    const previous = input[index - 1];
+    const char = input[index] ?? '';
 
-    if ((char === '"' || char === "'") && previous !== '\\') {
-      quote = quote === char ? null : quote ?? char;
-      continue;
-    }
+    if (char === '(') parenDepth += 1;
+    else if (char === ')') parenDepth -= 1;
+    else if (char === '{') braceDepth += 1;
+    else if (char === '}') braceDepth -= 1;
+    else if (char === '[') bracketDepth += 1;
+    else if (char === ']') bracketDepth -= 1;
 
-    const isDelimiter = delimiter ? char === delimiter : /\s/.test(char ?? '');
-    if (isDelimiter && quote === null) {
+    const isDelimiter = delimiter ? char === delimiter && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 : /\s/.test(char);
+    if (isDelimiter) {
       pushArg(args, current);
       current = '';
       continue;
@@ -588,9 +601,8 @@ function splitArgs(input: string, lineNumber: number, delimiter?: string): strin
     current += char;
   }
 
-  if (quote !== null) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
   pushArg(args, current);
-  return args.map((arg) => arg.replace(/\\(["'])/g, '$1'));
+  return args;
 }
 
 function pushArg(args: string[], value: string): void {

@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
+import * as XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
 import type { WorkflowContext, WorkflowScript } from '../types.js';
-import { parseFlowProgram } from './parser.js';
+import { parseExpression, parseFlowProgram } from './parser.js';
 import type { FlowBinaryOperator, FlowBlockName, FlowExpression, FlowInputValue, FlowProgram, FlowStatement, FlowValue } from './types.js';
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10000;
@@ -10,29 +11,31 @@ const MAX_LOOP_ITERATIONS = 10000;
 
 const ALL_COMMANDS = [
   { name: 'nav', aliases: ['goto'], desc: 'Navigate to URL' },
-  { name: 'navurl', aliases: [], desc: 'Navigate to URL' },
-  { name: 'newtab', aliases: [], desc: 'Open and activate a new tab, optionally with URL' },
-  { name: 'closetab', aliases: [], desc: 'Close active tab' },
-  { name: 'activetab', aliases: [], desc: 'Activate tab by zero-based index or context id' },
-  { name: 'backnav', aliases: [], desc: 'Navigate browser history back' },
-  { name: 'reloadnav', aliases: [], desc: 'Reload current page' },
-  { name: 'geturl', aliases: [], desc: 'Store current URL in pageUrl' },
-  { name: 'waiturlchange', aliases: [], desc: 'Wait until URL differs from given URL' },
-  { name: 'waitload', aliases: [], desc: 'Wait for page load (2s settle + readyState)' },
-  { name: 'waitelement', aliases: ['waitxpath'], desc: 'Wait for XPath match (default 10s)' },
-  { name: 'getelementattribute', aliases: [], desc: 'Store XPath attribute in elementAttribute' },
-  { name: 'getelementtext', aliases: [], desc: 'Store XPath text in elementText' },
-  { name: 'countelement', aliases: [], desc: 'Store XPath match count in elementCount' },
+  { name: 'navUrl', aliases: [], desc: 'Navigate to URL' },
+  { name: 'newTab', aliases: [], desc: 'Open and activate a new tab, optionally with URL' },
+  { name: 'closeTab', aliases: [], desc: 'Close active tab' },
+  { name: 'activeTab', aliases: [], desc: 'Activate tab by zero-based index or context id' },
+  { name: 'backNav', aliases: [], desc: 'Navigate browser history back' },
+  { name: 'reloadNav', aliases: [], desc: 'Reload current page' },
+  { name: 'getUrl', aliases: [], desc: 'Store current URL in pageUrl' },
+  { name: 'waitUrlChange', aliases: [], desc: 'Wait until URL differs from given URL' },
+  { name: 'waitLoad', aliases: [], desc: 'Wait for page load (2s settle + readyState)' },
+  { name: 'waitElement', aliases: ['waitXPath'], desc: 'Wait for XPath match (default 10s)' },
+  { name: 'getElementAttribute', aliases: [], desc: 'Store XPath attribute in elementAttribute' },
+  { name: 'getElementText', aliases: [], desc: 'Store XPath text in elementText' },
+  { name: 'countElement', aliases: [], desc: 'Store XPath match count in elementCount' },
   { name: 'click', aliases: [], desc: 'Click element by XPath' },
-  { name: 'typetext', aliases: ['type'], desc: 'Type text into element' },
-  { name: 'pastetext', aliases: [], desc: 'Paste text via clipboard' },
-  { name: 'movemouse', aliases: [], desc: 'Move mouse to XPath element' },
+  { name: 'typeText', aliases: ['type'], desc: 'Type text into element' },
+  { name: 'pasteText', aliases: [], desc: 'Paste text via clipboard' },
+  { name: 'moveMouse', aliases: [], desc: 'Move mouse to XPath element' },
   { name: 'scroll', aliases: [], desc: 'Scroll page by pixels' },
-  { name: 'executejs', aliases: ['executeJS', 'js'], desc: 'Execute JavaScript and store result in jsResult' },
-  { name: 'fileupload', aliases: [], desc: 'Upload file into input[type=file] XPath when supported' },
+  { name: 'executeJs', aliases: ['executeJS', 'js'], desc: 'Execute JavaScript and store result in jsResult' },
+  { name: 'fileUpload', aliases: [], desc: 'Upload file into input[type=file] XPath when supported' },
   { name: 'info', aliases: [], desc: 'Log page title and URL' },
-  { name: 'httprequest', aliases: [], desc: 'Run HTTP request and store httpStatus/httpHeaders/httpBody/httpUrl' },
-  { name: 'httpdownload', aliases: [], desc: 'Download URL to file and store downloadPath/downloadBytes' },
+  { name: 'httpRequest', aliases: [], desc: 'Run HTTP request and store httpStatus/httpHeaders/httpBody/httpUrl' },
+  { name: 'httpDownload', aliases: [], desc: 'Download URL to file and store downloadPath/downloadBytes' },
+  { name: 'fileWriteAllText', aliases: [], desc: 'Overwrite a text file' },
+  { name: 'writeExcel', aliases: [], desc: 'Write a value to an Excel cell' },
   { name: 'delay', aliases: ['sleep'], desc: 'Sleep N ms (or N-M for random range)' },
   { name: 'log', aliases: [], desc: 'Log message' },
   { name: 'help', aliases: [], desc: 'Show available commands' },
@@ -44,6 +47,13 @@ const PAGE_COMMANDS = new Set([
 ].map((item) => item.toLowerCase()));
 const ALL_FUNCTIONS = [
   { name: 'hasElement', aliases: ['existsXPath'], desc: 'Check XPath exists' },
+  { name: 'splitText', aliases: [], desc: 'Split text by delimiter and return an array' },
+  { name: 'readJson', aliases: [], desc: 'Read JSON value by dotted path' },
+  { name: 'randomNum', aliases: [], desc: 'Return random integer between min and max' },
+  { name: 'fileExist', aliases: [], desc: 'Check file exists' },
+  { name: 'folderExist', aliases: [], desc: 'Check folder exists' },
+  { name: 'readExcel', aliases: [], desc: 'Read value from Excel cell by header and row' },
+  { name: 'fileReadAllText', aliases: [], desc: 'Read entire text file' },
 ];
 const PAGE_FUNCTIONS = new Set(ALL_FUNCTIONS.flatMap((f) => [f.name.toLowerCase(), ...f.aliases.map((a) => a.toLowerCase())]));
 const COMMAND_LIST = ALL_COMMANDS.map((c) => `  ${c.name}${c.aliases.length ? ` (${c.aliases.join('/')})` : ''} — ${c.desc}`).join('\n');
@@ -59,6 +69,7 @@ type FlowExecutionContext = Partial<WorkflowContext> & {
 type FlowRuntime = {
   locals: Record<string, FlowValue>;
   loopIndexStack: number[];
+  excelInputs: Set<string>;
 };
 
 type LoopSignal = 'next' | 'exit';
@@ -76,7 +87,8 @@ export async function loadFlowScript(filePath: string): Promise<WorkflowScript> 
 export async function executeFlowBlock(ctx: FlowExecutionContext, program: FlowProgram, block: FlowBlockName): Promise<void> {
   const statements = program[block];
   validateStatementsForBlock(statements, block);
-  const signal = await executeFlowStatements(ctx, statements, { locals: {}, loopIndexStack: [] });
+  const excelInputs = new Set(program.inputs.filter((input) => input.type === 'inputExcelFile').map((input) => input.name.toLowerCase()));
+  const signal = await executeFlowStatements(ctx, statements, { locals: {}, loopIndexStack: [], excelInputs });
   if (signal) throw new AppError(`${signal === 'next' ? 'nextLoop' : 'exitLoop'} used outside a loop.`);
 }
 
@@ -92,7 +104,7 @@ async function executeFlowStatements(ctx: FlowExecutionContext, statements: Flow
 async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowStatement, runtime: FlowRuntime): Promise<LoopSignal | undefined> {
   switch (statement.type) {
     case 'command':
-      await executeFlowCommand(ctx, interpolateCommand(statement, valuesForInterpolation(ctx, runtime)), runtime);
+      await executeFlowCommand(ctx, await interpolateCommand(ctx, statement, runtime), runtime);
       return undefined;
 
     case 'assignment':
@@ -301,6 +313,20 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
       return;
     }
 
+    case 'filewritealltext': {
+      const [filePath, ...textParts] = requireArgs(item, 2);
+      const outputPath = resolve(filePath);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, textParts.join(' '), 'utf8');
+      return;
+    }
+
+    case 'writeexcel': {
+      const [filePath, columnName, rowIndex, ...textParts] = requireArgs(item, 4);
+      writeExcelCell(filePath, columnName, rowIndex, textParts.join(' '), item);
+      return;
+    }
+
     case 'delay':
     case 'sleep': {
       const [min, max] = requireArgs(item, 1, 2);
@@ -315,7 +341,7 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
 
     case 'log': {
       requireArgs(item, 1);
-      const interpolated = interpolateCommand(item, valuesForInterpolation(ctx, runtime));
+      const interpolated = await interpolateCommand(ctx, item, runtime);
       ctx.log(interpolated.args.join(' '));
       return;
     }
@@ -414,12 +440,67 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
     case 'call': {
       const name = expression.name.toLowerCase();
       const args = [];
-      for (const arg of expression.args) args.push(await evaluateExpression(ctx, arg, runtime, item));
+      for (const arg of expression.args) {
+        try {
+          args.push(await evaluateExpression(ctx, arg, runtime, item));
+        } catch (error) {
+          if (arg.type === 'variable' && error instanceof AppError && error.message.includes(`unknown variable "${arg.name}"`)) {
+            args.push(arg.name);
+          } else {
+            throw error;
+          }
+        }
+      }
       if (name === 'haselement' || name === 'existsxpath') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
         return requirePage(ctx, item).existsXPath(String(args[0] ?? ''));
       }
+      if (name === 'splittext') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        return String(args[0] ?? '').split(String(args[1] ?? ''));
+      }
+      if (name === 'readjson') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        return readJsonValue(String(args[0] ?? ''), String(args[1] ?? ''), item);
+      }
+      if (name === 'randomnum') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        const min = toNumber(args[0], item);
+        const max = toNumber(args[1], item);
+        if (max < min) throw lineError(item, `randomNum max (${max}) must be >= min (${min}).`);
+        return min + Math.floor(Math.random() * (max - min + 1));
+      }
+      if (name === 'fileexist') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return pathExists(String(args[0] ?? ''), 'file');
+      }
+      if (name === 'folderexist') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return pathExists(String(args[0] ?? ''), 'folder');
+      }
+      if (name === 'readexcel') {
+        if (args.length !== 3) throw lineError(item, `${expression.name} expects 3 arguments.`);
+        return readExcelCell(String(args[0] ?? ''), args[1], args[2], item);
+      }
+      if (name === 'filereadalltext') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return await readFile(resolve(String(args[0] ?? '')), 'utf8');
+      }
+      if (runtime.excelInputs.has(name)) {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        const inputName = Object.keys(ctx.inputs).find((key) => key.toLowerCase() === name) ?? expression.name;
+        return readExcelCell(String(ctx.inputs[inputName] ?? ''), args[0], args[1], item);
+      }
       throw lineError(item, `unknown function "${expression.name}". Available functions:\n${FUNCTION_LIST}`);
+    }
+
+    case 'index': {
+      const object = await evaluateExpression(ctx, expression.object, runtime, item);
+      const indexValue = await evaluateExpression(ctx, expression.index, runtime, item);
+      if (!Array.isArray(object)) throw lineError(item, `cannot index non-array value "${String(object)}".`);
+      const index = toNumber(indexValue, item);
+      if (!Number.isInteger(index)) throw lineError(item, `array index must be an integer, got "${String(indexValue)}".`);
+      return object[index] ?? null;
     }
   }
 }
@@ -454,7 +535,7 @@ function validateStatementForBlock(statement: FlowStatement, block: FlowBlockNam
   if (statement.type === 'command') {
     const command = statement.command.toLowerCase();
     if (command !== 'log' && PAGE_COMMANDS.has(command)) {
-      throw lineError(statement, `${statement.command} can only be used inside run profile block.`);
+      throw lineError(statement, `${statement.command} can only be used inside run profile block because it interacts with webpage.`);
     }
   }
   if (statement.type === 'if') {
@@ -490,29 +571,110 @@ function validateExpressionForBlock(expression: FlowExpression, block: FlowBlock
   if (expression.type === 'call') {
     for (const arg of expression.args) validateExpressionForBlock(arg, block, item);
   }
-}
-
-function valuesForInterpolation(ctx: FlowExecutionContext, runtime: FlowRuntime): Record<string, FlowInputValue> {
-  const values: Record<string, FlowInputValue> = { ...ctx.inputs };
-  for (const [key, value] of Object.entries(runtime.locals)) {
-    if (value !== null) values[key] = value;
+  if (expression.type === 'index') {
+    validateExpressionForBlock(expression.object, block, item);
+    validateExpressionForBlock(expression.index, block, item);
   }
-  values.loopIndex = runtime.loopIndexStack[runtime.loopIndexStack.length - 1] ?? -1;
-  return values;
 }
 
-function interpolateCommand(command: Extract<FlowStatement, { type: 'command' }>, values: Record<string, FlowInputValue>): Extract<FlowStatement, { type: 'command' }> {
-  return {
-    ...command,
-    args: command.args.map((arg) => interpolate(arg, values, command)),
-  };
+async function interpolateCommand(ctx: FlowExecutionContext, command: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<Extract<FlowStatement, { type: 'command' }>> {
+  const args = [];
+  for (const arg of command.args) args.push(await interpolate(ctx, arg, runtime, command));
+  return { ...command, args };
 }
 
-function interpolate(value: string, values: Record<string, FlowInputValue>, item: { lineNumber: number; raw: string }): string {
-  return value.replace(/\$\{([A-Za-z_][\w-]*)\}/g, (_match, name: string) => {
-    if (!(name in values)) throw lineError(item, `unknown variable "${name}".`);
-    return String(values[name]);
-  });
+async function interpolate(ctx: FlowExecutionContext, value: string, runtime: FlowRuntime, item: { lineNumber: number; raw: string }): Promise<string> {
+  let result = '';
+  let lastIndex = 0;
+  const pattern = /\$\{([^}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    result += value.slice(lastIndex, match.index);
+    const expressionText = match[1] ?? '';
+    const evaluated = await evaluateExpression(ctx, parseExpression(expressionText, item.lineNumber), runtime, item);
+    result += flowValueToString(evaluated);
+    lastIndex = pattern.lastIndex;
+  }
+  return result + value.slice(lastIndex);
+}
+
+async function pathExists(filePath: string, kind: 'file' | 'folder'): Promise<boolean> {
+  const stats = await stat(resolve(filePath)).catch(() => null);
+  return kind === 'file' ? stats?.isFile() ?? false : stats?.isDirectory() ?? false;
+}
+
+function readJsonValue(text: string, path: string, item: { lineNumber: number; raw: string }): FlowValue {
+  let current: unknown;
+  try {
+    current = JSON.parse(text);
+  } catch (error) {
+    throw lineError(item, `readJson invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  for (const key of path.split('.').filter(Boolean)) {
+    if (current === null || typeof current !== 'object' || !(key in current)) return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return toFlowValue(current);
+}
+
+function readExcelCell(filePath: string, columnName: FlowValue, rowIndex: FlowValue, item: { lineNumber: number; raw: string }): FlowValue {
+  const workbook = XLSX.readFile(resolve(filePath));
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return null;
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet?.['!ref']) return null;
+
+  const column = findExcelColumn(sheet, String(columnName ?? ''), item);
+  const row = parseExcelDataRow(rowIndex, item);
+  const cell = sheet[XLSX.utils.encode_cell({ c: column, r: row })];
+  return toFlowValue(cell?.v);
+}
+
+function writeExcelCell(filePath: string, columnName: string, rowIndexText: string, value: string, item: { lineNumber: number; raw: string }): void {
+  const outputPath = resolve(filePath);
+  let workbook: XLSX.WorkBook;
+  let sheetName: string;
+  let sheet: XLSX.WorkSheet;
+
+  try {
+    workbook = XLSX.readFile(outputPath);
+    sheetName = workbook.SheetNames[0] ?? 'Sheet1';
+    sheet = workbook.Sheets[sheetName] ?? XLSX.utils.aoa_to_sheet([[columnName]]);
+    if (!workbook.SheetNames.includes(sheetName)) XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+  } catch {
+    workbook = XLSX.utils.book_new();
+    sheetName = 'Sheet1';
+    sheet = XLSX.utils.aoa_to_sheet([[columnName]]);
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+  }
+
+  const column = findExcelColumn(sheet, columnName, item);
+  const row = parseExcelDataRow(rowIndexText, item);
+  XLSX.utils.sheet_add_aoa(sheet, [[value]], { origin: { c: column, r: row } });
+  XLSX.writeFile(workbook, outputPath);
+}
+
+function findExcelColumn(sheet: XLSX.WorkSheet, columnName: string, item: { lineNumber: number; raw: string }): number {
+  if (!sheet['!ref']) throw lineError(item, 'Excel sheet is empty.');
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  for (let column = range.s.c; column <= range.e.c; column += 1) {
+    const cell = sheet[XLSX.utils.encode_cell({ c: column, r: 0 })];
+    if (String(cell?.v ?? '') === columnName) return column;
+  }
+  throw lineError(item, `Excel column not found: ${columnName}`);
+}
+
+function parseExcelDataRow(rowIndex: FlowValue, item: { lineNumber: number; raw: string }): number {
+  const parsed = toNumber(rowIndex, item);
+  if (!Number.isInteger(parsed) || parsed < 1) throw lineError(item, `Excel row index must be a positive integer, got "${String(rowIndex)}".`);
+  return parsed;
+}
+
+function flowValueToString(value: FlowValue): string {
+  if (value === null) return '';
+  if (Array.isArray(value)) return value.map((item) => flowValueToString(item)).join(',');
+  return String(value);
 }
 
 function requirePage(ctx: FlowExecutionContext, item: { lineNumber: number; raw: string; command?: string }): WorkflowContext['page'] {
@@ -547,6 +709,7 @@ function toNumber(value: FlowValue, item: { lineNumber: number; raw: string }): 
 function toFlowValue(value: unknown): FlowValue {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.map((item) => toFlowValue(item)).filter((item) => item !== null);
   return JSON.stringify(value);
 }
 
@@ -554,6 +717,7 @@ function isTruthy(value: FlowValue): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
   return false;
 }
 

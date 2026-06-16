@@ -3,10 +3,10 @@ import { tmpdir } from 'os';
 import { resolve, isAbsolute, join, relative, basename, extname, sep } from 'path';
 import { pathToFileURL } from 'url';
 import { randomBytes } from 'crypto';
-import { select, isCancel } from '@clack/prompts';
 import { build as esbuild } from 'esbuild';
 import { AppError, CliBackError } from '../utils/errors.js';
 import { globalAbort } from '../utils/abort.js';
+import { runListPicker } from '../ui/list-picker.js';
 import { loadFlowProgram, loadFlowScript } from './dsl/executor.js';
 import type { FlowProgram } from './dsl/types.js';
 import type { WorkflowScript } from './types.js';
@@ -53,7 +53,7 @@ async function listScriptFiles(): Promise<string[]> {
   try {
     entries = await readdir(scriptsDir);
   } catch {
-    throw new AppError(`No scripts/ directory found in ${process.cwd()}. Create one and add .ts or .flow files, or use --script <path>.`);
+    return [];
   }
 
   return entries
@@ -83,16 +83,17 @@ export async function selectScript(defaultScript?: string): Promise<string> {
   ];
 
   if (choices.length === 1) { // Only 'Exit' exists
-    throw new AppError('No workflow scripts found. Add a .ts or .flow file in scripts/ or pass --script <path>.');
+    throw new AppError('No workflow scripts found. Add a .ts or .flow file in scripts/, or pass --script <path>.');
   }
 
-  const selected = await select({
-    message: `Select workflow script (${choices.length - 1} found)`,
+  const selected = await runListPicker({
+    title: `Select workflow script (${choices.length - 1} found)`,
     options: choices,
     initialValue: defaultScript,
+    cancelHint: 'exit',
   });
 
-  if (isCancel(selected) || selected === '__exit__') {
+  if (selected === undefined || selected === '__exit__') {
     throw globalAbort.signal.aborted ? new AppError('Aborted') : new AppError('Exit');
   }
 

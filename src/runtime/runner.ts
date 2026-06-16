@@ -96,6 +96,7 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
     break;
   }
 
+  clearScreen();
   logger.info(`  Profile: ${profile.name}`);
 
   const baseCtx: BaseContext = { profile, inputs: inputs!, args: args!, log, sleep: (ms) => sleep(ms, signal) };

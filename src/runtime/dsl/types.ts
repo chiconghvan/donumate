@@ -1,6 +1,8 @@
-export type FlowInputKind = 'input' | 'text' | 'number' | 'file' | 'folder' | 'checkbox' | 'comboBox';
+export type FlowInputKind = 'input' | 'text' | 'number' | 'file' | 'folder' | 'checkbox' | 'comboBox' | 'inputExcelFile';
 
-export type FlowInputValue = string | number | boolean;
+export type FlowPrimitiveValue = string | number | boolean;
+
+export type FlowInputValue = FlowPrimitiveValue | FlowInputValue[];
 
 export type FlowValue = FlowInputValue | null;
 
@@ -26,7 +28,8 @@ export type FlowExpression =
   | { type: 'variable'; name: string }
   | { type: 'unary'; operator: '!' | '-'; argument: FlowExpression }
   | { type: 'binary'; operator: FlowBinaryOperator; left: FlowExpression; right: FlowExpression }
-  | { type: 'call'; name: string; args: FlowExpression[] };
+  | { type: 'call'; name: string; args: FlowExpression[] }
+  | { type: 'index'; object: FlowExpression; index: FlowExpression };
 
 export type FlowAssignmentStatement = {
   type: 'assignment';
