@@ -1,5 +1,7 @@
+import { readFile, stat } from 'fs/promises';
+import { resolve } from 'path';
 import type { BidiClient } from '../bidi/bidi-client.js';
-import type { BidiKeyAction, BidiPointerAction } from '../bidi/bidi-types.js';
+import type { BidiKeyAction, BidiPointerAction, BrowsingContextInfo } from '../bidi/bidi-types.js';
 import { countInteractiveElementsExpression, type InteractiveElementsResult, type ButtonInfo } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
@@ -58,6 +60,39 @@ export class PageAutomation {
     await this.bidi.navigate(this.contextId, url);
   }
 
+  async navUrl(url: string): Promise<void> {
+    await this.goto(url);
+  }
+
+  async newTab(url?: string): Promise<void> {
+    const current = this.contextId;
+    const contextId = await this.bidi.createContext(current);
+    this.contextId = contextId;
+    this.mousePosition = undefined;
+    if (url) await this.goto(url);
+  }
+
+  async closeTab(): Promise<void> {
+    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
+    const closing = this.contextId;
+    await this.bidi.closeContext(closing);
+    const tree = await this.bidi.getTree();
+    this.contextId = tree.contexts.find((item) => item.context !== closing)?.context;
+    this.mousePosition = undefined;
+    if (!this.contextId) throw new Error('No browsing context remains after closing tab.');
+  }
+
+  async activeTab(target: string): Promise<void> {
+    const tree = await this.bidi.getTree();
+    const contexts = flattenContexts(tree.contexts);
+    const index = Number(target);
+    const contextId = Number.isInteger(index) ? contexts[index]?.context : contexts.find((item) => item.context === target)?.context;
+    if (!contextId) throw new Error(`Tab not found: ${target}`);
+    await this.bidi.activateContext(contextId);
+    this.contextId = contextId;
+    this.mousePosition = undefined;
+  }
+
   /** Wait for document.readyState === 'complete' */
   async waitForLoad(): Promise<void> {
     if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
@@ -79,6 +114,39 @@ export class PageAutomation {
   async info(): Promise<{ title: string; url: string }> {
     const str = String(await this.evaluate(getPageInfoExpression));
     return JSON.parse(str) as { title: string; url: string };
+  }
+
+  async getUrl(): Promise<string> {
+    return String(await this.evaluate('location.href'));
+  }
+
+  async waitUrlChange(previousUrl: string, timeoutMs = 10000): Promise<string> {
+    const changedUrl = await this.evaluate<string | null>(`(() => {
+      const previousUrl = ${JSON.stringify(previousUrl)};
+      const timeoutMs = ${JSON.stringify(timeoutMs)};
+      return new Promise((resolve) => {
+        const deadline = Date.now() + timeoutMs;
+        const check = () => {
+          if (location.href !== previousUrl) return resolve(location.href);
+          if (Date.now() >= deadline) return resolve(null);
+          setTimeout(check, 200);
+        };
+        check();
+      });
+    })()`);
+    if (changedUrl === null) throw new Error(`Timed out waiting for URL to change from: ${previousUrl}`);
+    return changedUrl;
+  }
+
+  async backNav(timeoutMs = 10000): Promise<void> {
+    const previousUrl = await this.getUrl();
+    await this.evaluate('history.back()');
+    await this.waitUrlChange(previousUrl, timeoutMs);
+  }
+
+  async reloadNav(): Promise<void> {
+    await this.evaluate('location.reload()');
+    await this.waitForLoad();
   }
 
   /** Check whether an XPath matches at least one element */
@@ -176,6 +244,69 @@ export class PageAutomation {
     })()`);
     if (text === null) throw new Error(`XPath not found: ${xpath}`);
     return text;
+  }
+
+  async getElementText(xpath: string): Promise<string> {
+    return this.textXPath(xpath);
+  }
+
+  async getElementAttribute(xpath: string, attribute: string): Promise<string> {
+    const value = await this.evaluate<string | null>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const attribute = ${JSON.stringify(attribute)};
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!(node instanceof Element)) return null;
+      return node.getAttribute(attribute) ?? '';
+    })()`);
+    if (value === null) throw new Error(`XPath not found: ${xpath}`);
+    return value;
+  }
+
+  async countElement(xpath: string): Promise<number> {
+    return Number(await this.evaluate(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      return document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotLength;
+    })()`));
+  }
+
+  async moveMouseXPath(xpath: string): Promise<void> {
+    const target = await this.resolveXPathTarget(xpath, 'movable');
+    await this.moveMouseTo(target);
+    this.mousePosition = { x: target.x, y: target.y };
+  }
+
+  async scroll(px: number): Promise<void> {
+    await this.evaluate(`window.scrollBy(0, ${JSON.stringify(px)})`);
+  }
+
+  async executeJs<T = unknown>(script: string): Promise<T> {
+    return this.evaluate<T>(script);
+  }
+
+  async fileUpload(filePath: string, xpath: string): Promise<void> {
+    const absolutePath = resolve(filePath);
+    const file = await stat(absolutePath);
+    if (!file.isFile()) throw new Error(`Upload path is not a file: ${absolutePath}`);
+    const dataUrl = `data:application/octet-stream;base64,${(await readFile(absolutePath)).toString('base64')}`;
+    const uploaded = await this.evaluate<boolean>(`(() => {
+      const xpath = ${JSON.stringify(xpath)};
+      const fileName = ${JSON.stringify(absolutePath.split(/[\\/]/).pop() ?? 'upload')};
+      const dataUrl = ${JSON.stringify(dataUrl)};
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!(node instanceof HTMLInputElement) || node.type !== 'file') return false;
+      return fetch(dataUrl)
+        .then((response) => response.blob())
+        .then((blob) => {
+          const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          node.files = transfer.files;
+          node.dispatchEvent(new Event('input', { bubbles: true }));
+          node.dispatchEvent(new Event('change', { bubbles: true }));
+          return node.files?.length === 1;
+        });
+    })()`);
+    if (!uploaded) throw new Error(`XPath must point to input[type=file]: ${xpath}`);
   }
 
   /** Count all interactive elements (a, button, input, etc.) */
@@ -430,6 +561,15 @@ export class PageAutomation {
   private randomInt(min: number, max: number): number {
     return Math.floor(this.randomFloat(min, max + 1));
   }
+}
+
+function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[] {
+  const result: BrowsingContextInfo[] = [];
+  for (const context of contexts) {
+    result.push(context);
+    if (context.children?.length) result.push(...flattenContexts(context.children));
+  }
+  return result;
 }
 
 function cubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {

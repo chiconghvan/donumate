@@ -1,4 +1,4 @@
-# donut-camoufox-bidi-cli
+# donumate
 
 Standalone TypeScript CLI for Donut Browser Camoufox profiles.
 
@@ -102,6 +102,36 @@ Inputs render in one CLI GUI frame. Use Tab/arrow keys to move, Left/Right to to
 
 Legacy flat `.flow` command files still run as main logic.
 
+More `.flow` commands:
+
+```flow
+run profile {
+  set ${page} = "https://example.com"
+  navUrl "${page}"
+  waitLoad
+  getUrl
+  waitElement "//h1" 10000
+  getElementText "//h1"
+  countElement "//a"
+  scroll 500
+  js "document.title"
+
+  for i = 0; i < 10; i = i + 1
+    if i == 2
+      nextLoop
+    if i == 5
+      exitLoop
+    log "i=${i}"
+}
+
+before run profile {
+  httpRequest "https://example.com" "GET"
+  httpDownload "https://example.com/image.png" "./downloads/image.png"
+}
+```
+
+Browser/page commands only run inside `run profile`. HTTP commands can run in any block. Full docs: `docs/flow-scripting.md`.
+
 ## Build
 
 ```bash
@@ -111,5 +141,5 @@ pnpm build
 Then run linked binary:
 
 ```bash
-donut-camoufox threads
+donumate threads
 ```

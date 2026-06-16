@@ -199,12 +199,12 @@ function parseChildBlock(lines: ParsedLine[], headerIndex: number): { statements
 function parseForLine(item: ParsedLine): FlowStatement {
   const rest = stripOptionalOpenBrace(item.line.replace(/^for\s+/i, '').trim());
   const parts = splitTopLevel(rest, ';');
-  if (parts.length !== 3) throw new AppError(`Line ${item.lineNumber}: for syntax must be: for i = 0; i < 3; i = i + 1`);
+  if (parts.length !== 3) throw new AppError(`Line ${item.lineNumber}: for syntax: for i = 0; i < 3; i = i + 1 (note: i++ is not supported, use i = i + 1)`);
   return {
     type: 'for',
-    init: parseAssignmentText(parts[0] ?? '', item),
+    init: parseAssignmentText(parts[0] ?? '', item)!,
     condition: parseExpression(parts[1] ?? '', item.lineNumber),
-    update: parseAssignmentText(parts[2] ?? '', item),
+    update: parseAssignmentText(parts[2] ?? '', item)!,
     body: [],
     lineNumber: item.lineNumber,
     raw: item.raw,
@@ -212,23 +212,26 @@ function parseForLine(item: ParsedLine): FlowStatement {
 }
 
 function parseSimpleStatement(item: ParsedLine): FlowStatement {
-  const setMatch = item.line.match(/^set\s+([A-Za-z_][\w-]*)\s*=\s*(.+)$/i);
-  if (setMatch) {
-    return { type: 'assignment', name: setMatch[1] ?? '', value: parseExpression(setMatch[2] ?? '', item.lineNumber), lineNumber: item.lineNumber, raw: item.raw };
+  if (/^nextLoop$/i.test(item.line)) {
+    return { type: 'loopControl', control: 'next', lineNumber: item.lineNumber, raw: item.raw };
   }
-  const assignmentMatch = item.line.match(/^([A-Za-z_][\w-]*)\s*=\s*(.+)$/);
-  if (assignmentMatch) {
-    return { type: 'assignment', name: assignmentMatch[1] ?? '', value: parseExpression(assignmentMatch[2] ?? '', item.lineNumber), lineNumber: item.lineNumber, raw: item.raw };
+  if (/^exitLoop$/i.test(item.line)) {
+    return { type: 'loopControl', control: 'exit', lineNumber: item.lineNumber, raw: item.raw };
   }
+  const assignment = parseAssignmentText(item.line, item, false);
+  if (assignment) return assignment;
   const command = parseFlowLine(item.raw, item.lineNumber);
   if (!command) throw new AppError(`Line ${item.lineNumber}: invalid statement.`);
   return { ...command, type: 'command' };
 }
 
-function parseAssignmentText(text: string, item: ParsedLine): FlowAssignmentStatement {
-  const match = text.trim().match(/^(?:set\s+)?([A-Za-z_][\w-]*)\s*=\s*(.+)$/i);
-  if (!match) throw new AppError(`Line ${item.lineNumber}: expected assignment, got "${text.trim()}".`);
-  return { type: 'assignment', name: match[1] ?? '', value: parseExpression(match[2] ?? '', item.lineNumber), lineNumber: item.lineNumber, raw: item.raw };
+function parseAssignmentText(text: string, item: ParsedLine, required = true): FlowAssignmentStatement | null {
+  const match = text.trim().match(/^(?:set\s+)?(?:\$\{([A-Za-z_][\w-]*)\}|([A-Za-z_][\w-]*))\s*=\s*(.+)$/i);
+  if (!match) {
+    if (!required) return null;
+    throw new AppError(`Line ${item.lineNumber}: expected assignment, got "${text.trim()}".`);
+  }
+  return { type: 'assignment', name: match[1] ?? match[2] ?? '', value: parseExpression(match[3] ?? '', item.lineNumber), lineNumber: item.lineNumber, raw: item.raw };
 }
 
 function parseFlowLine(raw: string, lineNumber: number): FlowCommand | null {

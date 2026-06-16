@@ -1,8 +1,12 @@
-import { readdir } from 'fs/promises';
+import { readdir, readFile, writeFile, mkdir, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 import { resolve, isAbsolute, join, relative, basename, extname, sep } from 'path';
 import { pathToFileURL } from 'url';
-import { select } from '@inquirer/prompts';
-import { AppError } from '../utils/errors.js';
+import { randomBytes } from 'crypto';
+import { select, isCancel } from '@clack/prompts';
+import { build as esbuild } from 'esbuild';
+import { AppError, CliBackError } from '../utils/errors.js';
+import { globalAbort } from '../utils/abort.js';
 import { loadFlowProgram, loadFlowScript } from './dsl/executor.js';
 import type { FlowProgram } from './dsl/types.js';
 import type { WorkflowScript } from './types.js';
@@ -12,8 +16,8 @@ export const BUILTIN_SCRIPTS: Record<string, string> = {
 };
 
 export type LoadedWorkflow =
-  | { kind: 'ts'; run: WorkflowScript; filePath: string }
-  | { kind: 'flow'; program: FlowProgram; filePath: string };
+  | { kind: 'ts'; run: WorkflowScript; filePath: string; cachedPath: string; cacheDir: string; cleanup: () => Promise<void> }
+  | { kind: 'flow'; program: FlowProgram; filePath: string; cachedPath: string; cacheDir: string; cleanup: () => Promise<void> };
 
 /**
  * Resolve script spec to an absolute file path.
@@ -49,7 +53,7 @@ async function listScriptFiles(): Promise<string[]> {
   try {
     entries = await readdir(scriptsDir);
   } catch {
-    return [];
+    throw new AppError(`No scripts/ directory found in ${process.cwd()}. Create one and add .ts or .flow files, or use --script <path>.`);
   }
 
   return entries
@@ -58,43 +62,196 @@ async function listScriptFiles(): Promise<string[]> {
     .sort((a, b) => a.localeCompare(b));
 }
 
-export async function selectScript(): Promise<string> {
+export async function selectScript(defaultScript?: string): Promise<string> {
+  if (process.stdin.isTTY) {
+    process.stdin.resume();
+  }
   const scriptFiles = await listScriptFiles();
   const builtinPaths = new Set(Object.values(BUILTIN_SCRIPTS));
   const choices = [
     ...Object.keys(BUILTIN_SCRIPTS).map((name) => ({
-      name: `${name} (built-in)`,
+      label: `${name} (built-in)`,
       value: name,
     })),
     ...scriptFiles
       .filter((file) => !builtinPaths.has(file))
       .map((file) => ({
-        name: `${basename(file, extname(file))} (${extname(file).slice(1)})`,
+        label: `${file}`,
         value: file,
       })),
+    { label: 'Exit', value: '__exit__' },
   ];
 
-  if (choices.length === 0) {
+  if (choices.length === 1) { // Only 'Exit' exists
     throw new AppError('No workflow scripts found. Add a .ts or .flow file in scripts/ or pass --script <path>.');
   }
 
-  return select({
-    message: 'Select workflow script',
-    choices,
+  const selected = await select({
+    message: `Select workflow script (${choices.length - 1} found)`,
+    options: choices,
+    initialValue: defaultScript,
   });
+
+  if (isCancel(selected) || selected === '__exit__') {
+    throw globalAbort.signal.aborted ? new AppError('Aborted') : new AppError('Exit');
+  }
+
+  return selected;
+}
+
+const CACHE_ROOT = join(tmpdir(), 'donumate', 'script-cache');
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
+function createRunId(): string {
+  const time = Date.now().toString(36);
+  const pid = process.pid.toString(36);
+  const rand = randomBytes(4).toString('hex');
+  return `${time}-${pid}-${rand}`;
+}
+
+async function createCacheDir(): Promise<string> {
+  const dir = join(CACHE_ROOT, createRunId());
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+async function pruneOldCaches(): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(CACHE_ROOT);
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  for (const entry of entries) {
+    const entryPath = join(CACHE_ROOT, entry);
+    try {
+      // Use file stat to check age; dirs created by us have mtime ~ creation time
+      const { statSync } = await import('fs');
+      const st = statSync(entryPath);
+      if (now - st.mtimeMs > CACHE_MAX_AGE_MS) {
+        await rm(entryPath, { recursive: true, force: true }).catch(() => {});
+      }
+    } catch {
+      // ignore prune errors
+    }
+  }
+}
+
+function makeCleanup(dir: string): () => Promise<void> {
+  return async () => {
+    try {
+      await rm(dir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  };
 }
 
 export async function loadWorkflow(spec: string): Promise<LoadedWorkflow> {
   const filePath = resolveScriptPath(spec);
+
+  // Prune old caches best-effort (non-blocking)
+  pruneOldCaches().catch(() => {});
+
+  const cacheDir = await createCacheDir();
+
   if (filePath.endsWith('.flow')) {
-    try {
-      return { kind: 'flow', program: await loadFlowProgram(filePath), filePath };
-    } catch (error) {
-      throw new AppError(`Failed to load flow script: ${filePath}`, error);
-    }
+    return loadFlowWorkflow(filePath, cacheDir);
   }
 
-  return { kind: 'ts', run: await importWorkflowScript(spec, filePath), filePath };
+  return loadTsWorkflow(spec, filePath, cacheDir);
+}
+
+async function loadFlowWorkflow(filePath: string, cacheDir: string): Promise<LoadedWorkflow> {
+  const cachedPath = join(cacheDir, 'workflow.flow');
+
+  try {
+    // Read original once, write to cache
+    const source = await readFile(filePath, 'utf8');
+    await writeFile(cachedPath, source, 'utf8');
+
+    // Parse from cached copy — no dependency on original file after this
+    const program = await loadFlowProgram(cachedPath);
+
+    return {
+      kind: 'flow',
+      program,
+      filePath,
+      cachedPath,
+      cacheDir,
+      cleanup: makeCleanup(cacheDir),
+    };
+  } catch (error) {
+    // Cleanup cache dir on failure
+    await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
+    throw new AppError(`Failed to load flow script: ${filePath}`, error);
+  }
+}
+
+async function loadTsWorkflow(spec: string, filePath: string, cacheDir: string): Promise<LoadedWorkflow> {
+  const cachedPath = join(cacheDir, 'workflow.mjs');
+
+  try {
+    // Bundle original TS into cached ESM — captures all relative imports
+    await esbuild({
+      entryPoints: [filePath],
+      outfile: cachedPath,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      target: 'node22',
+      sourcemap: 'inline',
+      packages: 'external',
+    });
+
+    // Import cached bundle with unique URL to bypass Node ESM module cache
+    const runId = createRunId();
+    const fileUrl = pathToFileURL(cachedPath).href + '?run=' + encodeURIComponent(runId);
+    const run = await importCachedScript(spec, filePath, fileUrl);
+
+    return {
+      kind: 'ts',
+      run,
+      filePath,
+      cachedPath,
+      cacheDir,
+      cleanup: makeCleanup(cacheDir),
+    };
+  } catch (error) {
+    await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
+    if (error instanceof AppError) throw error;
+    throw new AppError(`Failed to bundle/cache script: ${filePath}`, error);
+  }
+}
+
+async function importWorkflowScript(spec: string, filePath: string): Promise<WorkflowScript> {
+  const fileUrl = pathToFileURL(filePath).href;
+
+  return importCachedScript(spec, filePath, fileUrl);
+}
+
+async function importCachedScript(spec: string, originalPath: string, fileUrl: string): Promise<WorkflowScript> {
+  let mod: unknown;
+  try {
+    mod = await import(fileUrl);
+  } catch (error) {
+    throw new AppError(`Failed to import script: ${originalPath}`, error);
+  }
+
+  // Support both `export default function` and `export default { default: function }`
+  const fn = typeof mod === 'object' && mod !== null && 'default' in mod
+    ? (mod as { default: unknown }).default
+    : mod;
+
+  if (typeof fn !== 'function') {
+    throw new AppError(
+      `Script ${spec} (${originalPath}) does not export a default function.\n` +
+      `Expected: export default async function(ctx: WorkflowContext) { ... }`
+    );
+  }
+
+  return fn as WorkflowScript;
 }
 
 /**
@@ -112,29 +269,4 @@ export async function loadScript(spec: string): Promise<WorkflowScript> {
   }
 
   return importWorkflowScript(spec, filePath);
-}
-
-async function importWorkflowScript(spec: string, filePath: string): Promise<WorkflowScript> {
-  const fileUrl = pathToFileURL(filePath).href;
-
-  let mod: unknown;
-  try {
-    mod = await import(fileUrl);
-  } catch (error) {
-    throw new AppError(`Failed to import script: ${filePath}`, error);
-  }
-
-  // Support both `export default function` and `export default { default: function }`
-  const fn = typeof mod === 'object' && mod !== null && 'default' in mod
-    ? (mod as { default: unknown }).default
-    : mod;
-
-  if (typeof fn !== 'function') {
-    throw new AppError(
-      `Script ${spec} (${filePath}) does not export a default function.\n` +
-      `Expected: export default async function(ctx: WorkflowContext) { ... }`
-    );
-  }
-
-  return fn as WorkflowScript;
 }

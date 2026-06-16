@@ -1,22 +1,23 @@
 #!/usr/bin/env node
-import { Command, Option } from 'commander';
+import { Command } from 'commander';
 import { loadConfig } from './config/load-config.js';
-import { runWorkflow, type RunnerOptions } from './runtime/runner.js';
+import { clearScreen, runWorkflow, type RunnerOptions } from './runtime/runner.js';
 import { selectScript } from './runtime/script-loader.js';
-import { formatError } from './utils/errors.js';
+import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
+import { globalAbort, initAbortHandler } from './utils/abort.js';
 
 const program = new Command();
 
 program
-  .name('donut-camoufox')
+  .name('donumate')
   .description('Launch Donut Camoufox profiles and automate them over WebDriver BiDi')
-  .version('0.1.0');
+  .version('0.0.3');
 
 type CliOptions = {
   api?: string;
   token?: string;
   profile?: string;
-  headless?: string;
+  headless?: boolean;
   connectTimeout?: string;
   commandTimeout?: string;
   script?: string;
@@ -40,14 +41,17 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
 // Shared options helper
 function addCommonOptions(cmd: Command): Command {
   return cmd
-    .option('--api <url>', 'Donut API base URL')
+    .option('--api <url>', 'Donut API base URL (default: http://127.0.0.1:10108)')
     .option('--token <token>', 'Donut API bearer token')
-    .option('--profile <profile-id>', 'Donut profile id')
-    .addOption(new Option('--headless <boolean>', 'Launch profile headless').default(undefined))
-    .option('--connect-timeout <ms>', 'BiDi connect timeout in milliseconds')
-    .option('--command-timeout <ms>', 'BiDi command timeout in milliseconds')
-    .option('--input <key=value>', 'Set .flow input value; repeatable', collectInput, []);
+    .option('--profile <profile-id>', 'Skip interactive profile selection')
+    .option('--headless', 'Launch profile headless')
+    .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
+    .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
+    .option('--input <key=value>', 'Set .flow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, []);
 }
+
+// Register global SIGINT handler
+initAbortHandler();
 
 async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise<void> {
   const config = loadConfig({
@@ -59,30 +63,76 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
     commandTimeout: options.commandTimeout,
   });
 
-  const runnerOptions: RunnerOptions = {
-    apiBaseUrl: config.apiBaseUrl,
-    apiToken: config.apiToken,
-    profileId: config.profileId,
-    headless: config.headless,
-    bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
-    bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
-    scriptSpec: scriptSpec ?? options.script ?? await selectScript(),
-    scriptInputs: parseInputOverrides(options.input),
-  };
+  const fixedScript = scriptSpec ?? options.script;
+  let lastSelectedScript: string | undefined = undefined;
+  let savedInputsState: { values: Record<string, string>; cursor: number } | undefined = undefined;
+  let lastSelectedProfileId: string | undefined = undefined;
 
-  await runWorkflow(runnerOptions);
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    let selectedScript: string;
+    try {
+      selectedScript = fixedScript ?? await selectScript(lastSelectedScript);
+      lastSelectedScript = selectedScript;
+    } catch (error) {
+      if (error instanceof AppError && error.message === 'Exit') {
+        return;
+      }
+      throw error;
+    }
+
+    const runnerOptions: RunnerOptions = {
+      apiBaseUrl: config.apiBaseUrl,
+      apiToken: config.apiToken,
+      profileId: config.profileId,
+      headless: config.headless,
+      bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
+      bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
+      scriptSpec: selectedScript,
+      scriptInputs: parseInputOverrides(options.input),
+      signal: globalAbort.signal,
+      initialInputsState: savedInputsState,
+      initialProfileId: lastSelectedProfileId,
+    };
+
+    try {
+      await runWorkflow(runnerOptions);
+      return;
+    } catch (error) {
+      if (isCliBackError(error)) {
+        const backErr = error as CliBackError;
+        if (backErr.state?.inputsState) {
+          savedInputsState = backErr.state.inputsState;
+        }
+        if (backErr.state?.profileId) {
+          lastSelectedProfileId = backErr.state.profileId;
+        }
+
+        if (!fixedScript) {
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
 }
 
 async function handleAction(options: CliOptions, scriptSpec?: string): Promise<void> {
   try {
     await runWithOptions(options, scriptSpec);
   } catch (error) {
+    if (isCliBackError(error)) return;
+    if (globalAbort.signal.aborted) {
+      process.exitCode = 130;
+      return;
+    }
     console.error(formatError(error));
+    console.error('elifecycle command failed with exit code 1');
     process.exitCode = 1;
   }
 }
 
-// Bare CLI: choose script, then profile.
+// Interactive: choose script, then profile.
 addCommonOptions(program).action((options) => handleAction(options));
 
 // Generic run command
@@ -93,11 +143,11 @@ addCommonOptions(
     .option('--script <path-or-name>', 'Script path or built-in name (e.g. threads, ./scripts/my-task.ts)')
 ).action((options) => handleAction(options));
 
-// Built-in threads command (alias for run --script threads)
+// Built-in threads command
 addCommonOptions(
   program
     .command('threads')
-    .description('Open Threads in a Camoufox profile and count interactive elements (built-in script)')
+    .description('Built-in Threads workflow')
 ).action((options) => handleAction(options, 'threads'));
 
 program.parseAsync();

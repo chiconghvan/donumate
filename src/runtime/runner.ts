@@ -6,11 +6,17 @@ import { loadWorkflow } from './script-loader.js';
 import { executeFlowBlock } from './dsl/executor.js';
 import { stringifyInputValues, type FlowInputOverrides } from './dsl/input-values.js';
 import { runFlowInputForm } from '../ui/run-flow-input-form.js';
-import { formatError } from '../utils/errors.js';
+import { CliBackError, formatError, isCliBackError } from '../utils/errors.js';
+import { setCleaningUp } from '../utils/abort.js';
 import { logger } from '../utils/logger.js';
 import { sleep } from '../utils/retry.js';
+import { saveInputState, loadSavedInputState } from './input-state-store.js';
 import type { ApiProfile, RunProfileResponse } from '../donut/api-types.js';
 import type { WorkflowContext, FlowInputValue } from './types.js';
+
+export function clearScreen(): void {
+  process.stdout.write('\x1b[2J\x1b[H');
+}
 
 export type RunnerOptions = {
   apiBaseUrl: string;
@@ -21,6 +27,9 @@ export type RunnerOptions = {
   bidiCommandTimeoutMs: number;
   scriptSpec: string;
   scriptInputs?: FlowInputOverrides;
+  signal?: AbortSignal;
+  initialInputsState?: { values: Record<string, string>; cursor: number };
+  initialProfileId?: string;
 };
 
 type BaseContext = {
@@ -32,26 +41,64 @@ type BaseContext = {
 };
 
 export async function runWorkflow(options: RunnerOptions): Promise<void> {
-  const donut = new DonutApiClient(options.apiBaseUrl, options.apiToken);
+  const signal = options.signal;
+  const donut = new DonutApiClient(options.apiBaseUrl, options.apiToken, signal);
   const log = (...args: unknown[]) => logger.info(args.join(' '));
 
-  logger.info('[1/6] Loading script...');
   const workflow = await loadWorkflow(options.scriptSpec);
 
-  logger.info('[2/6] Collecting inputs...');
-  const inputs = workflow.kind === 'flow'
-    ? await runFlowInputForm(workflow.program.inputs, options.scriptInputs ?? {})
-    : {};
-  const args = stringifyInputValues(inputs);
+  let inputs: Record<string, FlowInputValue>;
+  let args: Record<string, string>;
+  let profile: ApiProfile;
 
-  logger.info('[3/6] Loading profile...');
-  const profiles = await donut.listProfiles();
-  const profile = options.profileId
-    ? findProfileOrThrow(profiles, options.profileId)
-    : await selectCamoufoxProfile(profiles);
-  logger.info(`  ${profile.name} (${profile.id})`);
+  let currentInputsState = options.initialInputsState;
+  let currentProfileId = options.initialProfileId;
 
-  const baseCtx: BaseContext = { profile, inputs, args, log, sleep };
+  if (!currentInputsState && workflow.kind === 'flow') {
+    currentInputsState = { values: await loadSavedInputState(options.scriptSpec) ?? {}, cursor: 0 };
+  }
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      if (workflow.kind === 'flow') {
+        const formResult = await runFlowInputForm(workflow.program.inputs, options.scriptInputs ?? {}, currentInputsState);
+        inputs = formResult.values;
+        currentInputsState = formResult.state;
+        await saveInputState(options.scriptSpec, formResult.state.values).catch((error: unknown) => logger.error(formatError(error)));
+      } else {
+        inputs = {};
+      }
+    } catch (error) {
+      if (isCliBackError(error)) {
+        throw new CliBackError('Back', { inputsState: currentInputsState });
+      }
+      throw error;
+    }
+    args = stringifyInputValues(inputs);
+
+    const profiles = await donut.listProfiles();
+    try {
+      profile = options.profileId
+        ? findProfileOrThrow(profiles, options.profileId)
+        : await selectCamoufoxProfile(profiles, currentProfileId);
+      currentProfileId = profile.id;
+    } catch (error) {
+      if (isCliBackError(error)) {
+        if (workflow.kind === 'flow' && workflow.program.inputs.length > 0) {
+          clearScreen();
+          continue;
+        }
+        throw new CliBackError('Back', { inputsState: currentInputsState, profileId: currentProfileId });
+      }
+      throw error;
+    }
+    break;
+  }
+
+  logger.info(`  Profile: ${profile.name}`);
+
+  const baseCtx: BaseContext = { profile, inputs: inputs!, args: args!, log, sleep: (ms) => sleep(ms, signal) };
 
   if (workflow.kind === 'flow') {
     await executeFlowBlock(baseCtx, workflow.program, 'beforeRunProfile');
@@ -64,24 +111,19 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
   let afterKillError: unknown;
 
   try {
-    logger.info('[4/6] Launching profile...');
     run = await donut.runProfile(profile.id, {
       url: 'about:blank',
       headless: options.headless,
     });
     launched = true;
-    logger.info(`  Remote debugging port: ${run.remote_debugging_port}`);
 
-    logger.info('[5/6] Waiting for profile to be ready...');
-    await sleep(4000); // wait for browser process to start before polling
+    await sleep(4000, signal);
     const readyProfile = await donut.waitForProfileReady(profile.id, { timeoutMs: 30000 });
-    logger.info(`  Profile ready: is_running=${readyProfile.is_running}, process_id=${readyProfile.process_id}`);
+    logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
 
     const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
-    logger.info(`  BiDi WS: ${wsUrl}`);
-
-    bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs);
-    await connectBidiWithRetry(bidi, wsUrl);
+    bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, signal);
+    await connectBidiWithRetry(bidi, wsUrl, signal);
 
     const page = new PageAutomation(bidi);
     await page.init();
@@ -93,29 +135,36 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
       bidi,
     };
 
-    logger.info('[6/6] Running script...');
+    clearScreen();
     if (workflow.kind === 'flow') {
       await executeFlowBlock(ctx, workflow.program, 'main');
     } else {
       await workflow.run(ctx);
     }
-    logger.info('Done.');
+    logger.info('Done. Profile cleaned up.');
   } catch (error) {
     mainError = error;
   } finally {
-    await bidi?.close().catch(() => {});
-    if (launched) {
-      await donut.killProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
-      logger.info('Killed profile.');
-    }
-
-    if (workflow.kind === 'flow') {
-      try {
-        await executeFlowBlock(baseCtx, workflow.program, 'afterKillProfile');
-      } catch (error) {
-        afterKillError = error;
-        logger.error(formatError(error));
+    setCleaningUp(true);
+    try {
+      await bidi?.close().catch(() => {});
+      if (launched) {
+        const cleanupDonut = new DonutApiClient(options.apiBaseUrl, options.apiToken);
+        await cleanupDonut.killProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
       }
+
+      if (workflow.kind === 'flow') {
+        try {
+          await executeFlowBlock(baseCtx, workflow.program, 'afterKillProfile');
+        } catch (error) {
+          afterKillError = error;
+          logger.error(formatError(error));
+        }
+      }
+
+      await workflow.cleanup().catch((error: unknown) => logger.error(formatError(error)));
+    } finally {
+      setCleaningUp(false);
     }
   }
 
@@ -123,7 +172,7 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
   if (afterKillError) throw afterKillError;
 }
 
-async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string): Promise<void> {
+async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string, signal?: AbortSignal): Promise<void> {
   const maxRetries = 5;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -133,9 +182,10 @@ async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string): Promise<vo
       break;
     } catch (error) {
       lastError = error as Error;
+      if (signal?.aborted) break;
       if (attempt < maxRetries) {
-        logger.info(`  BiDi connect attempt ${attempt}/${maxRetries} failed, retrying in 1s...`);
-        await sleep(1000);
+        logger.info(`  BiDi attempt ${attempt}/${maxRetries} failed, retrying in 1s...`);
+        await sleep(1000, signal);
       }
     }
   }

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.0.4
+
+### New features
+
+- **`.flow` expanded command set** — added `navUrl`, tab controls, history/reload/URL helpers, XPath read/count helpers, mouse move, scroll, JS execution, file upload, HTTP request, and HTTP download commands.
+- **Loop controls** — added `nextLoop` and `exitLoop` for `while`/`for` bodies.
+- **Assignment shorthand** — added `set ${name}=expr` while keeping `set name = expr` and `name = expr` compatible.
+- **Result variables** — commands now expose values like `${pageUrl}`, `${elementText}`, `${elementAttribute}`, `${elementCount}`, `${jsResult}`, `${httpStatus}`, `${httpBody}`, `${downloadPath}`, and `${downloadBytes}`.
+- **BiDi tab support** — added browsing context create/close/activate wrappers.
+- **File upload helper** — loads local files into `input[type=file]` targets and dispatches `input`/`change` events.
+
+### Changes
+
+- `PageAutomation` now exposes higher-level navigation, element, scrolling, JS, tab, and upload helpers for `.flow` and TypeScript scripts.
+- `.flow` docs and README now include expanded command examples and command result variables.
+
 ## 0.0.3
 
 ### New features

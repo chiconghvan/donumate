@@ -39,15 +39,15 @@ export async function coerceAndValidateInput(input: FlowInputDefinition, rawValu
       return rawValue;
     case 'number': {
       const parsed = Number(value);
-      if (!Number.isFinite(parsed)) throw new AppError(`${input.name}: expected finite number.`);
+      if (!Number.isFinite(parsed)) throw new AppError(`${input.name}: expected a number, got "${rawValue || '(empty)'}".`);
       return parsed;
     }
     case 'checkbox':
       if (/^(true|1|yes|on)$/i.test(value)) return true;
       if (/^(false|0|no|off)$/i.test(value)) return false;
-      throw new AppError(`${input.name}: expected checkbox boolean.`);
+      throw new AppError(`${input.name}: expected true/false/1/0/yes/no, got "${rawValue}".`);
     case 'comboBox':
-      if (!input.options?.includes(value)) throw new AppError(`${input.name}: expected one of ${input.options?.join(', ')}.`);
+      if (!input.options?.includes(value)) throw new AppError(`${input.name}: expected one of [${input.options?.join(', ')}], got "${value}".`);
       return value;
     case 'file': {
       const filePath = resolvePath(value);

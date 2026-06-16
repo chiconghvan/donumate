@@ -36,6 +36,13 @@ export type FlowAssignmentStatement = {
   raw: string;
 };
 
+export type FlowLoopControlStatement = {
+  type: 'loopControl';
+  control: 'next' | 'exit';
+  lineNumber: number;
+  raw: string;
+};
+
 export type FlowCommandStatement = FlowCommand & {
   type: 'command';
 };
@@ -66,7 +73,7 @@ export type FlowForStatement = {
   raw: string;
 };
 
-export type FlowStatement = FlowCommandStatement | FlowAssignmentStatement | FlowIfStatement | FlowWhileStatement | FlowForStatement;
+export type FlowStatement = FlowCommandStatement | FlowAssignmentStatement | FlowLoopControlStatement | FlowIfStatement | FlowWhileStatement | FlowForStatement;
 
 export type FlowProgram = {
   inputs: FlowInputDefinition[];

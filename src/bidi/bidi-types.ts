@@ -30,7 +30,51 @@ export type BrowsingContextTree = {
   contexts: BrowsingContextInfo[];
 };
 
+export type BrowsingContextCreateResult = {
+  context: string;
+};
+
 export type ScriptEvaluateResult = {
   realm?: string;
   result: RemoteValue;
 };
+
+export type BidiPointerMoveAction = {
+  type: 'pointerMove';
+  x: number;
+  y: number;
+  duration?: number;
+  origin?: 'viewport';
+};
+
+export type BidiPointerButtonAction = {
+  type: 'pointerDown' | 'pointerUp';
+  button: number;
+};
+
+export type BidiPauseAction = {
+  type: 'pause';
+  duration?: number;
+};
+
+export type BidiPointerAction = BidiPointerMoveAction | BidiPointerButtonAction | BidiPauseAction;
+
+export type BidiPointerSourceActions = {
+  type: 'pointer';
+  id: string;
+  parameters: { pointerType: 'mouse' };
+  actions: BidiPointerAction[];
+};
+
+export type BidiKeyAction = BidiPauseAction | {
+  type: 'keyDown' | 'keyUp';
+  value: string;
+};
+
+export type BidiKeySourceActions = {
+  type: 'key';
+  id: string;
+  actions: BidiKeyAction[];
+};
+
+export type BidiInputSourceActions = BidiPointerSourceActions | BidiKeySourceActions;

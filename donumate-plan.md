@@ -41,19 +41,19 @@ Recommended libraries:
 Suggested project folder when implementing:
 
 ```text
-E:\Code\donut-camoufox-bidi-cli\
+E:\Code\donumate\
 ```
 
 Plan file intended copy target:
 
 ```text
-.\plans\donut-camoufox-bidi-cli-plan.md
+.\plans\donumate-plan.md
 ```
 
 ## Project structure
 
 ```text
-donut-camoufox-bidi-cli/
+donumate/
   package.json
   tsconfig.json
   README.md
@@ -87,7 +87,7 @@ donut-camoufox-bidi-cli/
       retry.ts
 
   plans/
-    donut-camoufox-bidi-cli-plan.md
+    donumate-plan.md
 ```
 
 ## Config
@@ -108,7 +108,7 @@ BIDI_COMMAND_TIMEOUT_MS=15000
 CLI flags override env:
 
 ```bash
-donut-camoufox threads --api http://127.0.0.1:10108
+donumate threads --api http://127.0.0.1:10108
 ```
 
 For first version, token can be optional because current Donut API may not enforce bearer token, but client should support it:
@@ -342,13 +342,13 @@ pnpm start threads
 or after build:
 
 ```bash
-donut-camoufox threads
+donumate threads
 ```
 
 Options:
 
 ```bash
-donut-camoufox threads \
+donumate threads \
   --api http://127.0.0.1:10108 \
   --token <optional-token> \
   --profile <profile-id> \
@@ -506,7 +506,7 @@ After first feature works:
 - Add task files:
 
 ```bash
-donut-camoufox run-script --profiles profiles.json --script ./tasks/threads-like.ts
+donumate run-script --profiles profiles.json --script ./tasks/threads-like.ts
 ```
 
 - Add screenshot/export result.

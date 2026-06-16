@@ -41,7 +41,20 @@ run profile {
 }
 ```
 
-## 2. Vòng đời chạy script
+## 2. Script caching
+
+Trước khi chạy, script được cache vào thư mục tạm OS (`tmpdir()/donumate/script-cache/`):
+
+- **`.flow`**: đọc file gốc một lần, ghi vào cache, parse từ bản cache. Sau khi cache xong, file gốc có thể bị ghi đè/xóa mà không ảnh hưởng lần chạy hiện tại.
+- **`.ts`**: bundle bằng esbuild vào file ESM trong cache (bao gồm tất cả relative imports), rồi import từ bản cache. File gốc có thể bị thay đổi sau bundle mà không ảnh hưởng run.
+
+Cache sẽ được dọn dẹp tự động sau khi script chạy xong. Cache cũ hơn 24h cũng được prune best-effort khi load script mới.
+
+> **Lưu ý cho OTA**: Tính năng OTA update script chưa được implement. Hiện tại, script luôn được load từ file gốc và cache lại trước khi chạy. Khi OTA được thêm, nó sẽ ghi đè file gốc — lần chạy tiếp theo sẽ dùng nội dung mới từ file gốc đã được cache lại.
+
+## 3. Vòng đời chạy script
+
+Khi chạy:
 
 Khi chạy:
 
@@ -64,13 +77,52 @@ Runner thực hiện theo thứ tự:
 11. Kill profile.
 12. Chạy `after kill profile`.
 
-## 3. Khi nào dùng từng block
+## 4. Khi nào dùng từng block
 
 ### `before run profile`
 
 Dùng để log, chuẩn bị dữ liệu, xác nhận input trước khi browser mở.
 
 Có thể dùng:
+
+```flow
+before run profile {
+  log "Start job with endpoint=${endpoint}"
+  sleep 1000
+}
+```
+
+Lưu ý: `log` dùng được ở cả `before run profile`, `run profile`, và `after kill profile`.
+
+```flow
+before run profile {
+  nav "https://example.com" # Sai: browser chưa mở
+}
+```
+
+### `run profile`
+
+Đây là main logic. Browser đã mở, page đã sẵn sàng. Dùng để mở URL, click, nhập text, đọc info.
+
+```flow
+run profile {
+  nav "https://example.com"
+  waitLoad
+  info
+}
+```
+
+### `after kill profile`
+
+Dùng để log kết quả cuối, cleanup logic không cần browser.
+
+```flow
+after kill profile {
+  log "Browser killed. Job done."
+}
+```
+
+Không được dùng lệnh page/browser ở block này vì browser đã tắt.
 
 ```flow
 before run profile {
@@ -111,7 +163,7 @@ after kill profile {
 
 Không được dùng lệnh page/browser ở block này vì browser đã tắt.
 
-## 4. Khai báo input
+## 5. Khai báo input
 
 Input khai báo trong block `inputs { ... }`.
 
@@ -140,7 +192,7 @@ Tên biến:
 - Có thể chứa chữ, số, `_`.
 - Ví dụ hợp lệ: `keyword`, `apiPort`, `_token`, `file1`.
 
-## 5. Các loại input
+## 6. Các loại input
 
 ### `input` — tự detect text/number
 
@@ -241,30 +293,30 @@ inputs {
 
 Default phải nằm trong danh sách option.
 
-## 6. Input UI
+## 7. Input UI
 
-Nếu script có `inputs`, CLI mở một khung UI duy nhất.
+Nếu script có `inputs`, CLI mở một khung UI tương tác sử dụng `@clack/prompts`.
 
-Phím điều khiển:
+Cách sử dụng form:
 
-| Phím | Tác dụng |
-|------|----------|
-| `Tab` | Đi xuống field tiếp theo |
-| `↑` / `↓` | Di chuyển field |
-| `←` / `→` | Toggle checkbox, đổi comboBox, mở file/folder browser |
-| `Enter` | Submit nếu đang ở `Run flow`, hoặc mở file/folder browser |
-| `Esc` | Hủy |
+- Di chuyển con trỏ lên xuống bằng phím mũi tên `↑` / `↓` hoặc `Tab`.
+- Nhấn `Enter` để chọn một field muốn sửa hoặc bấm nút hành động (`▶ Run flow`, `← Go Back`).
+- Trong các sub-prompt sửa giá trị:
+  - `checkbox`: Chọn Yes/No bằng mũi tên và `Enter`.
+  - `comboBox`: Chọn option mong muốn và `Enter`.
+  - `file` / `folder`: Sử dụng trình duyệt file để chọn hoặc tự nhập đường dẫn bằng tay.
+  - `text` / `number` / `input`: Nhập giá trị và nhấn `Enter`.
 
-Với file/folder browser:
+Với trình duyệt file/folder:
 
-| Phím | Tác dụng |
-|------|----------|
-| `↑` / `↓` | Di chuyển |
-| `Enter` | Mở folder hoặc chọn file/folder |
-| `←` | Lên folder cha |
-| `Esc` | Quay lại form input |
+- Di chuyển lên xuống bằng `↑` / `↓`.
+- Nhấn `Enter` để duyệt vào thư mục con hoặc chọn file/thư mục.
+- Chọn `📁 .. (Parent Directory)` để lên thư mục cha.
+- Chọn `✍️ Type/paste path manually` để nhập tay đường dẫn mong muốn.
+- Chọn `✨ Select current folder` để chọn thư mục hiện tại (chỉ có khi ở chế độ chọn `folder`).
+- Chọn `❌ Cancel (Back to Form)` để hủy và giữ nguyên giá trị cũ.
 
-## 7. Dùng biến input trong command
+## 8. Dùng biến input trong command
 
 Dùng `${tenBien}` để chèn input vào command.
 
@@ -298,7 +350,7 @@ after kill profile {
 
 Nếu dùng biến chưa khai báo, runner báo lỗi kèm line number.
 
-## 8. Comment
+## 9. Comment
 
 Hỗ trợ comment bằng `#` hoặc `//`.
 
@@ -321,7 +373,7 @@ run profile {
 }
 ```
 
-## 9. Quote và khoảng trắng
+## 10. Quote và khoảng trắng
 
 Nếu argument có khoảng trắng, bọc bằng dấu quote.
 
@@ -339,7 +391,7 @@ log 'hello world'
 log "hello world"
 ```
 
-## 10. Danh sách command
+## 11. Danh sách command
 
 ### `log`
 
@@ -425,17 +477,95 @@ click "//button[contains(., 'Submit')]"
 
 Chỉ dùng trong `run profile`.
 
-### `type`
+### `typeText`
 
-Nhập text vào element match XPath.
+Click element match XPath rồi gõ từng ký tự với delay ngẫu nhiên, mô phỏng người thật.
 
 ```flow
-type "//textarea" "hello world"
+typeText "//input[@name='email']" "user@example.com"
 ```
+
+Tham số:
+
+1. XPath element.
+2. Text cần gõ (có thể có khoảng trắng).
+
+`type` là alias của `typeText`, vẫn hoạt động nhưng nên dùng `typeText` cho mới.
 
 Chỉ dùng trong `run profile`.
 
-## 11. Control flow, biểu thức, `hasElement`
+### `pasteText`
+
+Ghi text vào clipboard, click element match XPath rồi Ctrl+V. Phù hợp cho emoji, Unicode phức tạp, multiline.
+
+```flow
+pasteText "//textarea[@name='message']" "Hello 👋🌍"
+```
+
+Lưu ý:
+
+- Cần browser hỗ trợ clipboard write (thông thường Camoufox hỗ trợ).
+- Nếu clipboard bị chặn, sẽ báo lỗi rõ.
+- Nên dùng `pasteText` thay `typeText` khi text chứa emoji hoặc text dài.
+
+Chỉ dùng trong `run profile`.
+
+### Navigation/tab commands
+
+Chỉ dùng trong `run profile`.
+
+```flow
+navUrl "https://example.com"   # alias logic với nav/goto
+newTab "https://example.com"   # mở tab mới và active
+activeTab 0                    # chuyển tab theo index 0-based hoặc context id
+closeTab
+backNav 10000                  # timeout optional
+reloadNav
+getUrl                         # lưu vào ${pageUrl}
+waitUrlChange "${pageUrl}" 10000
+```
+
+### Element/read commands
+
+Chỉ dùng trong `run profile`. Kết quả lưu vào biến runtime để dùng bằng `${...}`.
+
+```flow
+waitElement "//h1" 10000
+getElementText "//h1"                  # ${elementText}
+getElementAttribute "//a" "href"       # ${elementAttribute}
+countElement "//button"                # ${elementCount}
+```
+
+### Mouse, scroll, JS, upload
+
+Chỉ dùng trong `run profile`.
+
+```flow
+moveMouse "//button"
+scroll 600      # dương cuộn xuống, âm cuộn lên
+js "document.title"                    # ${jsResult}
+executeJs "document.body.innerText"
+fileUpload "C:/tmp/a.png" "//input[@type='file']"
+```
+
+`fileUpload` validate file, nạp file vào XPath `input[type=file]`, rồi dispatch `input` và `change` event.
+
+### HTTP commands
+
+Dùng được trong mọi block vì không cần browser.
+
+```flow
+httpRequest "https://httpbin.org/post" "POST" "{\"content-type\":\"application/json\"}" "{\"ok\":true}"
+log "status=${httpStatus} body=${httpBody}"
+
+httpDownload "https://example.com/image.png" "./downloads/image.png"
+log "saved=${downloadPath} bytes=${downloadBytes}"
+```
+
+`httpRequest` lưu: `${httpStatus}`, `${httpHeaders}`, `${httpBody}`, `${httpUrl}`.
+`httpDownload` lưu: `${downloadPath}`, `${downloadBytes}`.
+
+## 12. Control flow, biểu thức, `hasElement`
 
 Block control flow dùng thụt dòng. Dòng con thụt vào sâu hơn dòng `if`, `while`, `for` thì thuộc block đó. `else if` và `else` phải cùng độ thụt với `if` để được hiểu là cùng nhánh.
 
@@ -460,6 +590,16 @@ Hỗ trợ toán tử:
 - Logic: `&&`, `||`, `!`
 - Nhóm: `( ... )`
 
+### `set`
+
+Gán biến runtime. Biến dùng được ở expression và `${...}` sau khi gán.
+
+```flow
+set n = 1
+set ${title} = "hello"
+n = n + 1
+```
+
 ### `while`
 
 ```flow
@@ -470,6 +610,25 @@ run profile {
     set n = n + 1
 }
 ```
+
+### `nextLoop` / `exitLoop`
+
+Điều khiển vòng lặp gần nhất.
+
+```flow
+run profile {
+  for i = 0; i < 10; i = i + 1
+    if i == 2
+      nextLoop
+    if i == 5
+      exitLoop
+    log "i=${i}"
+}
+```
+
+- `nextLoop`: bỏ phần còn lại của iteration hiện tại.
+- `exitLoop`: thoát khỏi loop gần nhất.
+- Dùng ngoài `while`/`for` sẽ báo lỗi.
 
 ### `for`
 
@@ -497,7 +656,7 @@ run profile {
 
 `hasElement` chỉ dùng trong `run profile` vì cần page đang mở.
 
-## 12. XPath cơ bản
+## 13. XPath cơ bản
 
 `.flow` dùng XPath cho các command element.
 
@@ -510,18 +669,21 @@ click "//button[contains(., 'Submit')]"
 # Input có placeholder Search
 click "//input[@placeholder='Search']"
 
-type "//input[@placeholder='Search']" "donut"
+typeText "//input[@placeholder='Search']" "donut"
 
 # Textarea đầu tiên
 waitElement "//textarea" 10000
 
-type "//textarea" "hello"
+typeText "//textarea" "hello"
+
+# Paste text có emoji
+pasteText "//textarea" "Hello 👋🌍"
 
 # Link chứa text Login
 click "//a[contains(., 'Login')]"
 ```
 
-## 12. Override input bằng CLI
+## 14. Override input bằng CLI
 
 Có thể truyền input từ command line:
 
@@ -543,7 +705,7 @@ Nếu value có khoảng trắng, bọc quote ở shell:
 pnpm dev run --script ./scripts/my.flow --input "message=hello world"
 ```
 
-## 13. Script legacy flat
+## 15. Script legacy flat
 
 File `.flow` cũ không có block vẫn chạy được.
 
@@ -567,7 +729,7 @@ run profile {
 
 Nhưng script mới nên dùng block rõ ràng.
 
-## 14. Ví dụ đầy đủ
+## 16. Ví dụ đầy đủ
 
 ```flow
 inputs {
@@ -601,7 +763,7 @@ after kill profile {
 }
 ```
 
-## 15. Lỗi thường gặp
+## 17. Lỗi thường gặp
 
 ### Thiếu `run profile`
 
@@ -691,7 +853,7 @@ Nên viết:
 log "hello world"
 ```
 
-## 16. Quy ước nên dùng
+## 18. Quy ước nên dùng
 
 - Dùng block mới cho mọi script mới.
 - Khai báo input ở đầu file.

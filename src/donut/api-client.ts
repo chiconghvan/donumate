@@ -20,6 +20,7 @@ export class DonutApiClient {
   constructor(
     private readonly baseUrl: string,
     private readonly token?: string,
+    private readonly signal?: AbortSignal,
   ) {}
 
   async listProfiles(): Promise<ApiProfile[]> {
@@ -61,6 +62,7 @@ export class DonutApiClient {
     const deadline = Date.now() + timeoutMs;
 
     while (true) {
+      this.throwIfAborted();
       const profile = await this.getProfile(profileId);
       if (profile.is_running || (profile.process_id != null && profile.process_id > 0)) {
         return profile;
@@ -69,7 +71,7 @@ export class DonutApiClient {
         throw new AppError(`Profile ${profileId} did not start within ${timeoutMs}ms. Last status: is_running=${profile.is_running}, process_id=${profile.process_id}`);
       }
       logger.info(`Waiting for profile ${profileId} to start... (is_running=${profile.is_running}, process_id=${profile.process_id})`);
-      await sleep(pollMs);
+      await sleep(pollMs, this.signal);
     }
   }
 
@@ -77,7 +79,15 @@ export class DonutApiClient {
     await this.request(`/v1/profiles/${encodeURIComponent(profileId)}/kill`, { method: 'POST' });
   }
 
+  private throwIfAborted(): void {
+    if (this.signal?.aborted) {
+      throw new AppError('Aborted');
+    }
+  }
+
   private async request(path: string, init: RequestInit): Promise<unknown> {
+    this.throwIfAborted();
+
     const headers = new Headers(init.headers);
     headers.set('accept', 'application/json');
     if (init.body) headers.set('content-type', 'application/json');
@@ -85,9 +95,14 @@ export class DonutApiClient {
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
+      response = await fetch(`${this.baseUrl}${path}`, { ...init, headers, signal: this.signal });
     } catch (error) {
-      throw new AppError(`Donut API request failed. Is Donut API running at ${this.baseUrl}?`, error);
+      if (this.signal?.aborted) throw new AppError('Aborted');
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
+        throw new AppError(`Cannot connect to Donut API at ${this.baseUrl}. Is Donut Browser running?`, error);
+      }
+      throw new AppError(`Donut API request failed: ${msg}`, error);
     }
 
     if (!response.ok) {

@@ -9,13 +9,6 @@ inputs {
 }
 
 before run profile {
-  log "[before] autoValue=${autoValue}"
-  log "[before] textValue=${textValue}"
-  log "[before] numberValue=${numberValue}"
-  log "[before] filePath=${filePath}"
-  log "[before] folderPath=${folderPath}"
-  log "[before] enabled=${enabled}"
-  log "[before] mode=${mode}"
 }
 
 run profile {
@@ -27,6 +20,4 @@ run profile {
 }
 
 after kill profile {
-  log "[after] profile killed"
-  log "[after] final mode=${mode} outputFolder=${folderPath}"
 }
