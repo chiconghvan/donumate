@@ -26,9 +26,9 @@ function runPowerShellClipboardWrite(filePath: string): Promise<void> {
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      'Get-Content -LiteralPath $args[0] -Raw -Encoding Unicode | Set-Clipboard',
-      filePath,
+      'Set-Clipboard -Value ([System.IO.File]::ReadAllText($env:DONUMATE_CLIPBOARD_FILE, [System.Text.Encoding]::Unicode))',
     ], {
+      env: { ...process.env, DONUMATE_CLIPBOARD_FILE: filePath },
       stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,
     });

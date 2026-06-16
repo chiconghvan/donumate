@@ -27,7 +27,10 @@ export async function coerceAndValidateInputs(
   const values: Record<string, FlowInputValue> = {};
   for (const input of definitions) {
     values[input.name] = await coerceAndValidateInput(input, rawValues[input.name] ?? initialInputText(input, {}));
-    if (input.type === 'inputExcelFile') values[`${input.name}TotalRow`] = readExcelTotalRows(String(values[input.name]));
+    if (input.type === 'inputExcelFile') {
+      const filePath = String(values[input.name]);
+      values[`${input.name}TotalRow`] = filePath ? readExcelTotalRows(filePath) : 0;
+    }
   }
   return values;
 }
@@ -53,6 +56,7 @@ export async function coerceAndValidateInput(input: FlowInputDefinition, rawValu
       return value;
     case 'file':
     case 'inputExcelFile': {
+      if (input.type === 'inputExcelFile' && value === '' && input.defaultValue !== undefined) return '';
       const filePath = resolvePath(value);
       const stats = await stat(filePath).catch(() => null);
       if (!stats?.isFile()) throw new AppError(`${input.name}: file not found: ${filePath}`);

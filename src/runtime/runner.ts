@@ -12,6 +12,7 @@ import { logger } from '../utils/logger.js';
 import { sleep } from '../utils/retry.js';
 import { saveInputState, loadSavedInputState } from './input-state-store.js';
 import type { ApiProfile, RunProfileResponse } from '../donut/api-types.js';
+import type { FlowInputDefinition } from './dsl/types.js';
 import type { WorkflowContext, FlowInputValue } from './types.js';
 
 export function clearScreen(): void {
@@ -40,6 +41,37 @@ type BaseContext = {
   sleep: (ms: number) => Promise<void>;
 };
 
+const FLOW_SCRIPT_SETTING_INPUTS: FlowInputDefinition[] = [
+  {
+    name: 'hardless',
+    type: 'checkbox',
+    lineNumber: 0,
+    defaultValue: false,
+  },
+  {
+    name: 'threads',
+    type: 'number',
+    lineNumber: 0,
+    defaultValue: 1,
+  },
+  {
+    name: 'inputExcelFile',
+    type: 'inputExcelFile',
+    lineNumber: 0,
+    defaultValue: '',
+  },
+];
+
+function withFlowScriptSettingInputs(definitions: FlowInputDefinition[]): FlowInputDefinition[] {
+  const injected = FLOW_SCRIPT_SETTING_INPUTS.filter((setting) => !definitions.some((input) => input.name === setting.name));
+  return [...injected, ...definitions];
+}
+
+function flowHeadlessValue(inputs: Record<string, FlowInputValue>, fallback: boolean): boolean {
+  const value = inputs.hardless;
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 export async function runWorkflow(options: RunnerOptions): Promise<void> {
   const signal = options.signal;
   const donut = new DonutApiClient(options.apiBaseUrl, options.apiToken, signal);
@@ -62,7 +94,8 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
   while (true) {
     try {
       if (workflow.kind === 'flow') {
-        const formResult = await runFlowInputForm(workflow.program.inputs, options.scriptInputs ?? {}, currentInputsState);
+        const flowInputs = withFlowScriptSettingInputs(workflow.program.inputs);
+        const formResult = await runFlowInputForm(flowInputs, options.scriptInputs ?? {}, currentInputsState);
         inputs = formResult.values;
         currentInputsState = formResult.state;
         await saveInputState(options.scriptSpec, formResult.state.values).catch((error: unknown) => logger.error(formatError(error)));
@@ -105,6 +138,7 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
     await executeFlowBlock(baseCtx, workflow.program, 'beforeRunProfile');
   }
 
+  const shouldLaunchProfile = workflow.kind !== 'flow' || workflow.program.main.length > 0;
   let run: RunProfileResponse | undefined;
   let bidi: BidiClient | undefined;
   let launched = false;
@@ -112,37 +146,41 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
   let afterKillError: unknown;
 
   try {
-    run = await donut.runProfile(profile.id, {
-      url: 'about:blank',
-      headless: options.headless,
-    });
-    launched = true;
+    if (shouldLaunchProfile) {
+      run = await donut.runProfile(profile.id, {
+        url: 'about:blank',
+        headless: workflow.kind === 'flow' ? flowHeadlessValue(inputs!, false) : options.headless,
+      });
+      launched = true;
 
-    await sleep(4000, signal);
-    const readyProfile = await donut.waitForProfileReady(profile.id, { timeoutMs: 30000 });
-    logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
+      await sleep(4000, signal);
+      const readyProfile = await donut.waitForProfileReady(profile.id, { timeoutMs: 30000 });
+      logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
 
-    const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
-    bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, signal);
-    await connectBidiWithRetry(bidi, wsUrl, signal);
+      const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
+      bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, signal);
+      await connectBidiWithRetry(bidi, wsUrl, signal);
 
-    const page = new PageAutomation(bidi);
-    await page.init();
+      const page = new PageAutomation(bidi);
+      await page.init();
 
-    const ctx: WorkflowContext = {
-      ...baseCtx,
-      run,
-      page,
-      bidi,
-    };
+      const ctx: WorkflowContext = {
+        ...baseCtx,
+        run,
+        page,
+        bidi,
+      };
 
-    clearScreen();
-    if (workflow.kind === 'flow') {
-      await executeFlowBlock(ctx, workflow.program, 'main');
+      clearScreen();
+      if (workflow.kind === 'flow') {
+        await executeFlowBlock(ctx, workflow.program, 'main');
+      } else {
+        await workflow.run(ctx);
+      }
+      logger.info('Done. Profile cleaned up.');
     } else {
-      await workflow.run(ctx);
+      logger.info('  Running block empty, skip profile launch.');
     }
-    logger.info('Done. Profile cleaned up.');
   } catch (error) {
     mainError = error;
   } finally {

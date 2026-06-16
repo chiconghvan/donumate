@@ -1,10 +1,12 @@
 # Changelog
 
-## 0.0.4
+## 0.0.6
 
 ### New features
 
 - **`.flow` expanded command set** — added `navUrl`, tab controls, history/reload/URL helpers, XPath read/count helpers, mouse move, scroll, JS execution, file upload, HTTP request, HTTP download, and `fileReadAllText` commands.
+- **Raw `.flow` strings** — no JSON-style escaping needed in script source; runtime handles escaping/serialization.
+- **Docs cleanup** — removed doubled backslashes from `.flow` examples; paths now shown in raw form.
 - **Loop controls** — added `nextLoop` and `exitLoop` for `while`/`for` bodies.
 - **Assignment shorthand** — added `set ${name}=expr` while keeping `set name = expr` and `name = expr` compatible.
 - **Result variables** — commands now expose values like `${pageUrl}`, `${elementText}`, `${elementAttribute}`, `${elementCount}`, `${jsResult}`, `${httpStatus}`, `${httpBody}`, `${downloadPath}`, and `${downloadBytes}`.

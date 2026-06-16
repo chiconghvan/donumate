@@ -84,7 +84,7 @@ inputs {
 }
 
 before run profile {
-  log "Before launch: ${mode}"
+  log("Before launch: ${mode}")
 }
 
 run profile {
@@ -94,7 +94,23 @@ run profile {
 }
 
 after kill profile {
-  log "Browser killed"
+  log("Browser killed")
+}
+```
+
+> Note: `.flow` strings are raw. Backslashes stay literal (`"C:\Temp\note.txt"`), commas inside quotes do not split args, and embedded same quotes use doubled quotes (`"He said ""hi"""`).
+
+```flow
+before run profile {
+  httpRequest("https://example.com", POST, {
+    "content-type": "application/json"
+  }, {
+    "ok": true,
+    "message": "hello, world"
+  })
+
+  fileReadAllText("C:\Temp\note.txt")
+  httpDownload("https://example.com/image.png", "C:\Temp\download.png")
 }
 ```
 

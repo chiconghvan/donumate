@@ -10,11 +10,24 @@ export type FlowInputFormResult = {
   state: { values: Record<string, string>; cursor: number };
 };
 
+const SCRIPT_SETTING_NAMES = new Set(['hardless', 'threads', 'inputExcelFile']);
+const SCRIPT_SETTING_LABELS: Record<string, string> = {
+  hardless: 'Không cửa sổ (hardless)',
+  threads: 'Số luồng cùng lúc (threads)',
+  inputExcelFile: 'File excel đầu vào (inputExcelFile)',
+};
+
 function displayInputValue(def: FlowInputDefinition, value: string): string {
   if (def.type === 'checkbox') {
-    return /^(true|1|yes|on)$/i.test(value) ? '[x] Yes' : '[ ] No';
+    return /^(true|1|yes|on)$/i.test(value) ? 'true' : 'false';
   }
+  if (def.type === 'inputExcelFile' && value === '') return 'không có';
   return value || '<empty>';
+}
+
+function displayInputLabel(def: FlowInputDefinition, value: string): string {
+  const label = SCRIPT_SETTING_LABELS[def.name] ?? `${def.name} (${def.type})`;
+  return `${label} = ${displayInputValue(def, value)}`;
 }
 
 async function editFlowInput(def: FlowInputDefinition, currentVal: string): Promise<string> {
@@ -22,8 +35,8 @@ async function editFlowInput(def: FlowInputDefinition, currentVal: string): Prom
     const res = await runListPicker({
       title: `Set ${def.name}`,
       options: [
-        { value: 'true', label: 'Yes (true)' },
-        { value: 'false', label: 'No (false)' },
+        { value: 'true', label: 'true' },
+        { value: 'false', label: 'false' },
       ],
       initialValue: /^(true|1|yes|on)$/i.test(currentVal) ? 'true' : 'false',
       cancelHint: 'keep current',
@@ -42,7 +55,30 @@ async function editFlowInput(def: FlowInputDefinition, currentVal: string): Prom
     return res ?? currentVal;
   }
 
-  if (def.type === 'file' || def.type === 'folder' || def.type === 'inputExcelFile') {
+  if (def.type === 'inputExcelFile') {
+    const action = await runListPicker({
+      title: `Set ${def.name}`,
+      options: [
+        { value: 'browse', label: 'Browse file' },
+        { value: 'manual', label: 'Enter path manually' },
+        { value: 'clear', label: 'Không có file' },
+      ],
+      initialValue: currentVal ? 'browse' : 'clear',
+      cancelHint: 'keep current',
+    });
+    if (action === 'clear') return '';
+    if (action === 'manual') {
+      const res = await runTextInputPrompt({
+        title: `Enter value for ${def.name} (${def.type})`,
+        defaultValue: currentVal,
+      });
+      return res ?? currentVal;
+    }
+    if (action === 'browse') return browsePath('file', currentVal);
+    return currentVal;
+  }
+
+  if (def.type === 'file' || def.type === 'folder') {
     const mode = def.type === 'folder' ? 'folder' : 'file';
     return browsePath(mode, currentVal);
   }
@@ -59,6 +95,35 @@ async function editFlowInput(def: FlowInputDefinition, currentVal: string): Prom
     },
   });
   return res ?? currentVal;
+}
+
+function createInputChoices(
+  definitions: FlowInputDefinition[],
+  values: Record<string, string>,
+  settingsExpanded: boolean
+): ListPickerOption<string>[] {
+  const settingDefs = definitions.filter((def) => SCRIPT_SETTING_NAMES.has(def.name));
+  const userDefs = definitions.filter((def) => !SCRIPT_SETTING_NAMES.has(def.name));
+  const choices: ListPickerOption<string>[] = [
+    { value: '__submit__', label: 'Run flow' },
+  ];
+
+  if (settingDefs.length > 0) {
+    choices.push({ value: '__settings__', label: `${settingsExpanded ? '▾' : '▸'} Scripts Setting` });
+    if (settingsExpanded) {
+      choices.push(...settingDefs.map((def) => ({
+        value: def.name,
+        label: `  ├─ ${displayInputLabel(def, values[def.name] || '')}`,
+      })));
+    }
+  }
+
+  choices.push(...userDefs.map((def) => ({
+    value: def.name,
+    label: displayInputLabel(def, values[def.name] || ''),
+  })));
+
+  return choices;
 }
 
 export async function runFlowInputForm(
@@ -78,24 +143,20 @@ export async function runFlowInputForm(
   }
 
   const values: Record<string, string> = initialState?.values
-    ? { ...initialState.values }
+    ? { ...Object.fromEntries(definitions.map((item) => [item.name, initialInputText(item, overrides)])), ...initialState.values }
     : Object.fromEntries(definitions.map((item) => [item.name, initialInputText(item, overrides)]));
 
   let cursor = initialState?.cursor ?? 0;
   let validationError: string | undefined;
+  let settingsExpanded = false;
 
   while (true) {
-    const choices: ListPickerOption<string>[] = [
-      { value: '__submit__', label: 'Run flow' },
-      ...definitions.map((def) => ({
-        value: def.name,
-        label: `${def.name} (${def.type}): ${displayInputValue(def, values[def.name] || '')}`,
-      })),
-    ];
+    const choices = createInputChoices(definitions, values, settingsExpanded);
+    if (cursor >= choices.length) cursor = choices.length - 1;
 
     const title = validationError
-      ? `Flow Inputs Form\n\nValidation Error: ${validationError}\n\nEnter edits selected input. Direct picker opens for checkbox/comboBox/file/folder.`
-      : 'Flow Inputs Form\n\nEnter edits selected input. Direct picker opens for checkbox/comboBox/file/folder.';
+      ? `Flow Inputs Form\n\nValidation Error: ${validationError}\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.`
+      : 'Flow Inputs Form\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.';
     const selection = await runListPicker({
       title,
       options: choices,
@@ -108,6 +169,13 @@ export async function runFlowInputForm(
     }
     if (selection === '__back__') {
       throw new CliBackError('Back', { inputsState: { values, cursor } });
+    }
+
+    if (selection === '__settings__') {
+      settingsExpanded = !settingsExpanded;
+      const selectedIdx = choices.findIndex((choice) => choice.value === selection);
+      if (selectedIdx !== -1) cursor = selectedIdx;
+      continue;
     }
 
     if (selection === '__submit__') {

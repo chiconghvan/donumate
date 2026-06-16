@@ -4,10 +4,41 @@
 
 ## Syntax
 
-- Command / function call: `name(arg1, arg2)`
+- Command / function call: `name(arg1, arg2)`.
 - Tất cả args đi trong ngoặc đơn.
-- Không cần JSON escape trong source `.flow`.
 - Command names theo camelCase: `nav`, `waitLoad`, `fileUpload`, `httpRequest`, `readExcel`, ...
+- String dùng `"..."` hoặc `'...'`.
+- String là raw: backslash giữ nguyên, không decode JSON escape. `\n` là 2 ký tự `\` và `n`.
+- Comma trong quoted string không tách arg.
+- Muốn viết quote giống delimiter trong string: dùng doubled quote.
+  - `"He said ""hi"""` -> `He said "hi"`
+  - `'it''s ok'` -> `it's ok`
+- Windows path viết thẳng: `"C:\Temp\note.txt"`.
+
+## Raw string ví dụ
+
+```flow
+log("a,b")
+log("C:\Temp\note.txt")
+log("He said ""hi""")
+log('it''s ok')
+```
+
+JSON object/body có thể viết raw, không cần escape quote JSON:
+
+```flow
+httpRequest("https://httpbin.org/post", POST, {
+  "content-type": "application/json"
+}, {
+  "ok": true,
+  "message": "hello, world"
+})
+
+readJson({
+  "code": 200,
+  "message": "ok"
+}, code)
+```
 
 ## Ví dụ
 
@@ -25,12 +56,70 @@ running() {
   nav("${url}")
   waitLoad()
   click("${xpath}")
-  fileUpload("E:\\Temp\\upload.png", "//input[@type='file']")
+  fileUpload("E:\Temp\upload.png", "//input[@type='file']")
   httpRequest("https://httpbin.org/post", POST, {"content-type":"application/json"}, {"ok":true})
 }
 
 after() {
   log("Done")
+}
+```
+
+## Gán biến
+
+Flow hỗ trợ 2 dạng assignment:
+
+```flow
+set name = value
+name = value
+```
+
+Ví dụ number:
+
+```flow
+number = 33
+log("number=${number}")
+```
+
+Ví dụ string:
+
+```flow
+str = "sample"
+log("str=${str}")
+```
+
+Gán từ biến khác dùng tên biến trực tiếp, không dùng `${...}` ở vế phải:
+
+```flow
+b = "hello"
+a = b
+log("a=${a}")
+```
+
+`${...}` chỉ dùng để interpolate value bên trong command arg string:
+
+```flow
+log("a=${a}")
+```
+
+Gán kết quả function:
+
+```flow
+parts = splitText("a,b,c", ",")
+first = parts[0]
+log("first=${first}")
+```
+
+Gán input vào biến:
+
+```flow
+inputs {
+  keyword: input = "donut"
+}
+
+running() {
+  q = keyword
+  log("q=${q}")
 }
 ```
 
@@ -65,18 +154,20 @@ moveMouse("//button")
 scroll(600)
 js("document.title")
 executeJs("document.body.innerText")
-fileUpload("E:\\Code\\donumate\\docs\\upload.png", "//input[@type='file']")
+fileUpload("E:\Code\donumate\docs\upload.png", "//input[@type='file']")
 fileWriteAllText("./out.txt", "hello")
 ```
 
 ### HTTP / data
 
 ```flow
-httpRequest("https://httpbin.org/post", POST, {"content-type":"application/json"}, {"ok":true})
+httpRequest("https://httpbin.org/post", POST, {"content-type":"application/json"}, {"ok":true,"message":"hello, world"})
 httpDownload("https://example.com/image.png", "./downloads/image.png")
-readJson("{\"code\":200}", "code")
-readExcel("C:\\Temp\\data.xlsx", "A", 2)
-writeExcel("C:\\Temp\\data.xlsx", "A", 2, "value")
+readJson({
+  "code": 200
+}, code)
+readExcel("C:\Temp\data.xlsx", A, 2)
+writeExcel("C:\Temp\data.xlsx", A, 2, "value")
 ```
 
 ## Notes
@@ -85,4 +176,4 @@ writeExcel("C:\\Temp\\data.xlsx", "A", 2, "value")
 - `running()` mới dùng command browser.
 - Alias cũ kiểu `type` vẫn chạy, nhưng tên chuẩn là camelCase.
 - Tất cả command/function call đều phải dùng ngoặc đơn.
-- Windows path viết thẳng trong string, ví dụ `"E:\Code\donumate\docs"`.
+- Legacy flat script không có block vẫn chạy, nhưng syntax chuẩn mới là block + call.

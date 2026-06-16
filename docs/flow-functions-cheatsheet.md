@@ -8,11 +8,20 @@ Tất cả call đều dùng `name(arg1, arg2)`.
 ### `inputs { ... }`
 Khai báo input cho UI/CLI.
 
-## 2) Command dùng mọi block
+## 2) String / quote nhanh
+
+- String dùng `"..."` hoặc `'...'`.
+- String là raw: backslash giữ nguyên, không decode JSON escape.
+- Comma trong quoted string không tách arg: `log("a,b")`.
+- Quote giống delimiter dùng doubled quote: `log("He said ""hi""")`, `log('it''s ok')`.
+- Windows path viết thẳng: `"C:\Temp\note.txt"`.
+
+## 3) Command dùng mọi block
 
 ### `log`
 - Input: 1+ text part.
 - Mẫu: `log("Start job")`
+- Mẫu: `log("a,b")`
 
 ### `sleep`
 - Input: 1 số ms.
@@ -25,53 +34,93 @@ Khai báo input cho UI/CLI.
 
 ### `httpRequest`
 - Input: `url`, `method`, `headersJSON`, `body...`
-- `headersJSON` là text thô, không cần escape ký tự đặc biệt trong source `.flow`.
-- Mẫu: `httpRequest("https://api.example.com/user", POST, {})`
-- Mẫu: `httpRequest("https://api.example.com/login", POST, {"content-type":"application/json"}, {"user":"demo"})`
-- Parser giữ text raw; hệ thống escape khi cần serialize vào JS / runtime.
+- `headersJSON` và body là text raw, không cần escape quote JSON.
+- Mẫu:
+  ```flow
+  httpRequest("https://api.example.com/user", POST, {})
+  ```
+- Mẫu:
+  ```flow
+  httpRequest("https://api.example.com/login", POST, {
+    "content-type": "application/json"
+  }, {
+    "user": "demo",
+    "message": "hello, world"
+  })
+  ```
+
+### `readJson(...)`
+- Input: `jsonText`, `dot.path`
+- Mẫu:
+  ```flow
+  readJson({
+    "code": 200,
+    "message": "ok"
+  }, code)
+  ```
 
 ### `fileReadAllText`
 - Input: `filePath`
-- Mẫu: `str = fileReadAllText(filePath)`
-- Mẫu: `str = fileReadAllText("C:\\Temp\\note.txt")`
+- Mẫu:
+  ```flow
+  str = fileReadAllText(filePath)
+  ```
+- Mẫu:
+  ```flow
+  str = fileReadAllText("C:\Temp\note.txt")
+  ```
 
 ### `httpDownload`
 - Input: `url`, `savePath`
-- Mẫu: `httpDownload("https://example.com/file.zip", "C:\\Temp\\file.zip")`
+- Mẫu:
+  ```flow
+  httpDownload("https://example.com/file.zip", "C:\Temp\file.zip")
+  ```
 
 ### `fileWriteAllText`
 - Input: `filePath`, `text...`
-- Mẫu: `fileWriteAllText("C:\\Temp\\note.txt", "hello world")`
+- Mẫu:
+  ```flow
+  fileWriteAllText("C:\Temp\note.txt", "hello world")
+  ```
 
 ### `writeExcel`
 - Input: `filePath`, `columnName`, `rowIndex`, `text...`
-- Mẫu: `writeExcel("C:\\Temp\\data.xlsx", A, 2, "done")`
+- Mẫu:
+  ```flow
+  writeExcel("C:\Temp\data.xlsx", A, 2, "done")
+  ```
 
 ### `readExcel`
 - Input: `filePath`, `columnName`, `rowIndex`
-- Mẫu: `readExcel("C:\\Temp\\data.xlsx", A, 2)`
+- Mẫu:
+  ```flow
+  readExcel("C:\Temp\data.xlsx", A, 2)
+  ```
+
+### `fileExist(...)`
+- Input: `path`
+- Mẫu:
+  ```flow
+  fileExist("C:\Temp\a.txt")
+  ```
+
+### `folderExist(...)`
+- Input: `path`
+- Mẫu:
+  ```flow
+  folderExist("C:\Temp")
+  ```
 
 ### `splitText(...)`
 - Input: `text`, `delimiter`
 - Mẫu: `splitText("a,b,c", ",")`
 
-### `readJson(...)`
-- Input: `jsonText`, `dot.path`
-- Mẫu: `readJson("{\"code\":200}", "code")`
-
 ### `randomNum(...)`
 - Input: `min`, `max`
 - Mẫu: `randomNum(1, 10)`
 
-### `fileExist(...)`
-- Input: `path`
-- Mẫu: `fileExist("C:\\Temp\\a.txt")`
-
-### `folderExist(...)`
-- Input: `path`
-- Mẫu: `folderExist("C:\\Temp")`
-
-## 3) Command chỉ dùng `running`
+## 4) Command chỉ dùng `running`
 
 ### `nav` / `goto` / `navUrl`
 - Input: `url`
@@ -161,18 +210,26 @@ Khai báo input cho UI/CLI.
 
 ### `fileUpload`
 - Input: `filePath`, `xpath`
-- Mẫu: `fileUpload("C:\\Temp\\upload.png", "//input[@type='file']")`
+- Mẫu:
+  ```flow
+  fileUpload("C:\Temp\upload.png", "//input[@type='file']")
+  ```
 
 ### `info`
 - Input: none
 - Mẫu: `info()`
 
-## 4) Command chỉ dùng trong expression / control flow
+## 5) Command chỉ dùng trong expression / control flow
 
-### `set`
+### `set` / assignment
 - Input: `name = value`
+- Runtime hiểu cả `set name = value` và `name = value`.
+- Number: `number = 33`
+- String: `str = "sample"`
+- Gán từ biến khác: `a = b`
+- Không dùng `${b}` ở vế phải assignment; `${...}` chỉ dùng trong command arg string như `log("a=${a}")`.
 - Mẫu: `set n = 1`
-- Mẫu: `set title = "hello"`
+- Mẫu: `title = "hello"`
 
 ### `if / else if / else`
 - Input: condition expression
@@ -200,7 +257,7 @@ Khai báo input cho UI/CLI.
 - Mẫu: `hasElement("//h1")`
 - Mẫu: `existsXPath("//button")`
 
-## 5) Input dùng trong command
+## 6) Input dùng trong command
 
 Chèn biến bằng `${name}`.
 
@@ -209,16 +266,16 @@ Mẫu command:
 - `log("keyword=${keyword}")`
 - `type("//input[@name='q']", "${keyword}")`
 
-## 6) Comment / quote
+## 7) Comment
 
-- Comment: `#` hoặc `//`
-- String có space: dùng `"..."` hoặc `'...'`
+- Comment: `#` hoặc `//` ngoài string.
+- `#` hoặc `//` trong quoted string là text thường.
 
-## 7) Legacy flat script
+## 8) Legacy flat script
 
 Script cũ không có block vẫn chạy, nhưng syntax chuẩn mới là `name(...)`.
 
-## 8) Gợi ý nhanh
+## 9) Gợi ý nhanh
 
 - `before()` : `log`, `sleep`, `httpRequest`, `fileWriteAllText`, `writeExcel`
 - `running()` : `nav`, `click`, `typeText`, `waitLoad`, `info`

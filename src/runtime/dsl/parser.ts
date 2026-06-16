@@ -12,9 +12,9 @@ import type {
 } from './types.js';
 
 const BLOCK_PATTERNS: Array<{ key: keyof Pick<FlowProgram, 'beforeRunProfile' | 'main' | 'afterKillProfile'>; pattern: RegExp }> = [
-  { key: 'beforeRunProfile', pattern: /^(?:before(?:\s+run\s+profile)?)\s*\{\s*$/i },
-  { key: 'main', pattern: /^(?:running|run\s+profile)\s*\{\s*$/i },
-  { key: 'afterKillProfile', pattern: /^(?:after(?:\s+kill\s+profile)?)\s*\{\s*$/i },
+  { key: 'beforeRunProfile', pattern: /^(?:before(?:\s+run\s+profile)?|before\s*\(\s*\))\s*(\{)?\s*$/i },
+  { key: 'main', pattern: /^(?:running\s*\(\s*\)|running|run\s+profile)\s*(\{)?\s*$/i },
+  { key: 'afterKillProfile', pattern: /^(?:after(?:\s+kill\s+profile)?|after\s*\(\s*\))\s*(\{)?\s*$/i },
 ];
 const BLOCK_LABELS = 'before, running, or after';
 
@@ -92,6 +92,11 @@ export function parseFlowProgram(source: string): FlowProgram {
 
       const block = BLOCK_PATTERNS.find((entry) => entry.pattern.test(line));
       if (block) {
+        if (!line.endsWith('{')) {
+          if (block.key === 'main') throw new AppError(`Line ${item.lineNumber}: running block must include { ... }.`);
+          program[block.key] = [];
+          continue;
+        }
         currentBlock = block.key;
         currentBlockIndent = indent;
         if (block.key === 'main') sawMain = true;
@@ -243,11 +248,20 @@ function parseFlowLine(raw: string, lineNumber: number): FlowCommand | null {
   if (!functionLike) throw new AppError(`Line ${lineNumber}: expected commandName(arg1, arg2).`);
 
   return {
-    command: functionLike[1] ?? '',
-    args: splitArgs(functionLike[2] ?? '', lineNumber, ','),
+    command: normalizeCommandName(functionLike[1] ?? ''),
+    args: splitArgs(functionLike[2] ?? '', lineNumber, ',').map((arg) => unquote(arg, lineNumber)),
     lineNumber,
     raw,
   };
+}
+
+function normalizeCommandName(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower === 'nav' || lower === 'navurl') return 'goto';
+  if (lower === 'waitxpath') return 'waitelement';
+  if (lower === 'type') return 'typetext';
+  if (lower === 'executejs') return 'js';
+  return name;
 }
 
 export function parseExpression(text: string, lineNumber: number): FlowExpression {
@@ -357,18 +371,9 @@ function tokenizeExpression(text: string, lineNumber: number): ExprToken[] {
       continue;
     }
     if (char === '"' || char === "'") {
-      const quote = char;
-      let value = '';
-      index += 1;
-      while (index < text.length) {
-        const current = text[index] ?? '';
-        if (current === quote) break;
-        value += current;
-        index += 1;
-      }
-      if (text[index] !== quote) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
-      index += 1;
-      tokens.push({ type: 'string', value });
+      const parsed = readRawQuotedString(text, index, lineNumber);
+      index = parsed.nextIndex;
+      tokens.push({ type: 'string', value: parsed.value });
       continue;
     }
     if (/\d/.test(char) || (char === '.' && /\d/.test(text[index + 1] ?? ''))) {
@@ -470,7 +475,16 @@ function splitTopLevel(input: string, delimiter: string): string[] {
   let depth = 0;
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index] ?? '';
-    if ((char === '"' || char === "'") && input[index - 1] !== '\\') quote = quote === char ? null : quote ?? char;
+    if (isQuote(char)) {
+      current += char;
+      if (quote === char && input[index + 1] === char) {
+        current += input[index + 1] ?? '';
+        index += 1;
+        continue;
+      }
+      quote = quote === char ? null : quote ?? char;
+      continue;
+    }
     if (quote === null && char === '(') depth += 1;
     if (quote === null && char === ')') depth -= 1;
     if (quote === null && depth === 0 && char === delimiter) {
@@ -514,7 +528,7 @@ function normalizeInputType(value: string, lineNumber: number): FlowInputKind {
 
 function parseOptions(optionsText: string, lineNumber: number): string[] {
   const inner = optionsText.slice(1, -1);
-  const options = splitArgs(inner, lineNumber, ',');
+  const options = splitArgs(inner, lineNumber, ',').map((option) => unquote(option, lineNumber));
   if (options.some((option) => option.length === 0)) throw new AppError(`Line ${lineNumber}: comboBox options cannot be empty.`);
   return options;
 }
@@ -554,17 +568,25 @@ function autodetectValue(value: string): string | number {
 
 function unquote(value: string, lineNumber: number): string {
   const trimmed = value.trim();
-  const quote = trimmed[0];
-  if ((quote === '"' || quote === "'") && trimmed[trimmed.length - 1] === quote) return trimmed.slice(1, -1);
-  if ((quote === '"' || quote === "'") || trimmed.endsWith('"') || trimmed.endsWith("'")) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
+  const quote = trimmed[0] ?? '';
+  if (isQuote(quote)) {
+    const parsed = readRawQuotedString(trimmed, 0, lineNumber);
+    if (parsed.nextIndex !== trimmed.length) throw new AppError(`Line ${lineNumber}: unexpected text after quoted string.`);
+    return parsed.value;
+  }
+  if (trimmed.endsWith('"') || trimmed.endsWith("'")) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
   return trimmed;
 }
 
 function stripComment(line: string): string {
   let quote: string | null = null;
   for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    if (char === '"' || char === "'") {
+    const char = line[index] ?? '';
+    if (isQuote(char)) {
+      if (quote === char && line[index + 1] === char) {
+        index += 1;
+        continue;
+      }
       quote = quote === char ? null : quote ?? char;
       continue;
     }
@@ -577,6 +599,7 @@ function stripComment(line: string): string {
 function splitArgs(input: string, lineNumber: number, delimiter?: string): string[] {
   const args: string[] = [];
   let current = '';
+  let quote: string | null = null;
   let parenDepth = 0;
   let braceDepth = 0;
   let bracketDepth = 0;
@@ -584,14 +607,27 @@ function splitArgs(input: string, lineNumber: number, delimiter?: string): strin
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index] ?? '';
 
-    if (char === '(') parenDepth += 1;
-    else if (char === ')') parenDepth -= 1;
-    else if (char === '{') braceDepth += 1;
-    else if (char === '}') braceDepth -= 1;
-    else if (char === '[') bracketDepth += 1;
-    else if (char === ']') bracketDepth -= 1;
+    if (isQuote(char)) {
+      current += char;
+      if (quote === char && input[index + 1] === char) {
+        current += input[index + 1] ?? '';
+        index += 1;
+        continue;
+      }
+      quote = quote === char ? null : quote ?? char;
+      continue;
+    }
 
-    const isDelimiter = delimiter ? char === delimiter && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 : /\s/.test(char);
+    if (quote === null) {
+      if (char === '(') parenDepth += 1;
+      else if (char === ')') parenDepth -= 1;
+      else if (char === '{') braceDepth += 1;
+      else if (char === '}') braceDepth -= 1;
+      else if (char === '[') bracketDepth += 1;
+      else if (char === ']') bracketDepth -= 1;
+    }
+
+    const isDelimiter = quote === null && (delimiter ? char === delimiter && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 : /\s/.test(char));
     if (isDelimiter) {
       pushArg(args, current);
       current = '';
@@ -601,8 +637,36 @@ function splitArgs(input: string, lineNumber: number, delimiter?: string): strin
     current += char;
   }
 
+  if (quote !== null) throw new AppError(`Line ${lineNumber}: unterminated quote.`);
   pushArg(args, current);
   return args;
+}
+
+function readRawQuotedString(input: string, startIndex: number, lineNumber: number): { value: string; nextIndex: number } {
+  const quote = input[startIndex] ?? '';
+  if (!isQuote(quote)) throw new AppError(`Line ${lineNumber}: expected quote.`);
+
+  let value = '';
+  let index = startIndex + 1;
+  while (index < input.length) {
+    const char = input[index] ?? '';
+    if (char === quote) {
+      if (input[index + 1] === quote) {
+        value += quote;
+        index += 2;
+        continue;
+      }
+      return { value, nextIndex: index + 1 };
+    }
+    value += char;
+    index += 1;
+  }
+
+  throw new AppError(`Line ${lineNumber}: unterminated quote.`);
+}
+
+function isQuote(value: string): value is '"' | "'" {
+  return value === '"' || value === "'";
 }
 
 function pushArg(args: string[], value: string): void {

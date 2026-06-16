@@ -10,8 +10,7 @@ const DEFAULT_WAIT_TIMEOUT_MS = 10000;
 const MAX_LOOP_ITERATIONS = 10000;
 
 const ALL_COMMANDS = [
-  { name: 'nav', aliases: ['goto'], desc: 'Navigate to URL' },
-  { name: 'navUrl', aliases: [], desc: 'Navigate to URL' },
+  { name: 'goto', aliases: ['nav', 'navUrl', 'navurl'], desc: 'Navigate to URL' },
   { name: 'newTab', aliases: [], desc: 'Open and activate a new tab, optionally with URL' },
   { name: 'closeTab', aliases: [], desc: 'Close active tab' },
   { name: 'activeTab', aliases: [], desc: 'Activate tab by zero-based index or context id' },
@@ -29,7 +28,7 @@ const ALL_COMMANDS = [
   { name: 'pasteText', aliases: [], desc: 'Paste text via clipboard' },
   { name: 'moveMouse', aliases: [], desc: 'Move mouse to XPath element' },
   { name: 'scroll', aliases: [], desc: 'Scroll page by pixels' },
-  { name: 'executeJs', aliases: ['executeJS', 'js'], desc: 'Execute JavaScript and store result in jsResult' },
+  { name: 'js', aliases: ['executeJs', 'executeJS'], desc: 'Execute JavaScript and store result in jsResult' },
   { name: 'fileUpload', aliases: [], desc: 'Upload file into input[type=file] XPath when supported' },
   { name: 'info', aliases: [], desc: 'Log page title and URL' },
   { name: 'httpRequest', aliases: [], desc: 'Run HTTP request and store httpStatus/httpHeaders/httpBody/httpUrl' },
@@ -41,11 +40,17 @@ const ALL_COMMANDS = [
   { name: 'help', aliases: [], desc: 'Show available commands' },
 ];
 const PAGE_COMMANDS = new Set([
-  'nav', 'goto', 'navurl', 'newtab', 'closetab', 'activetab', 'backnav', 'reloadnav', 'geturl', 'waiturlchange',
+  'goto', 'nav', 'navurl', 'newtab', 'closetab', 'activetab', 'backnav', 'reloadnav', 'geturl', 'waiturlchange',
   'waitload', 'waitelement', 'waitxpath', 'getelementattribute', 'getelementtext', 'countelement', 'click', 'typetext',
-  'type', 'pastetext', 'movemouse', 'scroll', 'executejs', 'executeJS', 'js', 'fileupload', 'info',
+  'type', 'pastetext', 'movemouse', 'scroll', 'js', 'executejs', 'fileupload', 'info',
 ].map((item) => item.toLowerCase()));
 const ALL_FUNCTIONS = [
+  { name: 'getUrl', aliases: [], desc: 'Return current page URL' },
+  { name: 'httpRequest', aliases: [], desc: 'Run HTTP request and return raw response text' },
+  { name: 'js', aliases: ['executeJs', 'executeJS'], desc: 'Execute JavaScript and return result' },
+  { name: 'getElementText', aliases: [], desc: 'Return XPath text' },
+  { name: 'getElementAttribute', aliases: [], desc: 'Return XPath attribute' },
+  { name: 'countElement', aliases: [], desc: 'Return XPath match count' },
   { name: 'hasElement', aliases: ['existsXPath'], desc: 'Check XPath exists' },
   { name: 'splitText', aliases: [], desc: 'Split text by delimiter and return an array' },
   { name: 'readJson', aliases: [], desc: 'Read JSON value by dotted path' },
@@ -55,7 +60,9 @@ const ALL_FUNCTIONS = [
   { name: 'readExcel', aliases: [], desc: 'Read value from Excel cell by header and row' },
   { name: 'fileReadAllText', aliases: [], desc: 'Read entire text file' },
 ];
-const PAGE_FUNCTIONS = new Set(ALL_FUNCTIONS.flatMap((f) => [f.name.toLowerCase(), ...f.aliases.map((a) => a.toLowerCase())]));
+const PAGE_FUNCTIONS = new Set([
+  'haselement', 'existsxpath', 'geturl', 'js', 'executejs', 'getelementtext', 'getelementattribute', 'countelement',
+]);
 const COMMAND_LIST = ALL_COMMANDS.map((c) => `  ${c.name}${c.aliases.length ? ` (${c.aliases.join('/')})` : ''} — ${c.desc}`).join('\n');
 const FUNCTION_LIST = ALL_FUNCTIONS.map((f) => `  ${f.name}${f.aliases.length ? ` (${f.aliases.join('/')})` : ''} — ${f.desc}`).join('\n');
 
@@ -94,6 +101,13 @@ export async function executeFlowBlock(ctx: FlowExecutionContext, program: FlowP
 
 async function executeFlowStatements(ctx: FlowExecutionContext, statements: FlowStatement[], runtime: FlowRuntime): Promise<LoopSignal | undefined> {
   for (const statement of statements) {
+    if (statement.type === 'command') {
+      const interpolated = await interpolateCommand(ctx, statement, runtime);
+      ctx.log(`flow:${statement.lineNumber}`, formatFlowCommand(interpolated));
+      await executeFlowCommand(ctx, interpolated, runtime);
+      continue;
+    }
+
     ctx.log(`flow:${statement.lineNumber}`, statement.raw.trim());
     const signal = await executeFlowStatement(ctx, statement, runtime);
     if (signal) return signal;
@@ -109,6 +123,7 @@ async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowSt
 
     case 'assignment':
       runtime.locals[statement.name] = await evaluateExpression(ctx, statement.value, runtime, statement);
+      ctx.log(`${statement.name} = ${flowValueToString(runtime.locals[statement.name] ?? null)}`);
       return undefined;
 
     case 'loopControl':
@@ -168,8 +183,8 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
   const command = item.command.toLowerCase();
 
   switch (command) {
-    case 'nav':
     case 'goto':
+    case 'nav':
     case 'navurl': {
       const [url] = requireArgs(item, 1);
       await requirePage(ctx, item).goto(url);
@@ -209,7 +224,6 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
     case 'geturl': {
       requireArgs(item, 0);
       runtime.locals.pageUrl = await requirePage(ctx, item).getUrl();
-      ctx.log(`pageUrl=${runtime.locals.pageUrl}`);
       return;
     }
 
@@ -291,7 +305,6 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
     case 'js': {
       const [script] = requireArgs(item, 1);
       runtime.locals.jsResult = toFlowValue(await requirePage(ctx, item).executeJs(script));
-      ctx.log(`jsResult=${String(runtime.locals.jsResult)}`);
       return;
     }
 
@@ -303,7 +316,6 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
 
     case 'httprequest': {
       await executeHttpRequest(item, runtime);
-      ctx.log(`httpStatus=${runtime.locals.httpStatus}`);
       return;
     }
 
@@ -366,17 +378,24 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
   }
 }
 
-async function executeHttpRequest(item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<void> {
+async function executeHttpRequest(item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<string> {
   const [url, method, headersText, ...bodyParts] = requireArgs(item, 2);
+  const responseText = await runHttpRequest(url, method, headersText, bodyParts.join(' ') || undefined, item, runtime);
+  return responseText;
+}
+
+async function runHttpRequest(url: string | undefined, method: string | undefined, headersText: string | undefined, body: string | undefined, item: { lineNumber: number; raw: string }, runtime: FlowRuntime): Promise<string> {
+  if (!url || !method) throw lineError(item, 'httpRequest expects at least 2 arguments.');
   const headers = parseHeaders(headersText, item);
-  const body = bodyParts.length ? bodyParts.join(' ') : undefined;
   const response = await fetch(url, { method: method.toUpperCase(), headers, body });
   const headerRecord: Record<string, string> = {};
   response.headers.forEach((value, key) => { headerRecord[key] = value; });
+  const responseText = await response.text();
   runtime.locals.httpStatus = response.status;
   runtime.locals.httpHeaders = JSON.stringify(headerRecord);
-  runtime.locals.httpBody = await response.text();
+  runtime.locals.httpBody = responseText;
   runtime.locals.httpUrl = response.url;
+  return responseText;
 }
 
 async function executeHttpDownload(item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<void> {
@@ -454,6 +473,30 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       if (name === 'haselement' || name === 'existsxpath') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
         return requirePage(ctx, item).existsXPath(String(args[0] ?? ''));
+      }
+      if (name === 'geturl') {
+        if (args.length !== 0) throw lineError(item, `${expression.name} expects 0 arguments.`);
+        return requirePage(ctx, item).getUrl();
+      }
+      if (name === 'js' || name === 'executejs') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return toFlowValue(await requirePage(ctx, item).executeJs(String(args[0] ?? '')));
+      }
+      if (name === 'getelementtext') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return requirePage(ctx, item).getElementText(String(args[0] ?? ''));
+      }
+      if (name === 'getelementattribute') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        return requirePage(ctx, item).getElementAttribute(String(args[0] ?? ''), String(args[1] ?? ''));
+      }
+      if (name === 'countelement') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        return requirePage(ctx, item).countElement(String(args[0] ?? ''));
+      }
+      if (name === 'httprequest') {
+        if (args.length < 2 || args.length > 4) throw lineError(item, `${expression.name} expects 2-4 arguments.`);
+        return runHttpRequest(String(args[0] ?? ''), String(args[1] ?? ''), args[2] === undefined ? undefined : String(args[2]), args[3] === undefined ? undefined : String(args[3]), item, runtime);
       }
       if (name === 'splittext') {
         if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
@@ -581,6 +624,14 @@ async function interpolateCommand(ctx: FlowExecutionContext, command: Extract<Fl
   const args = [];
   for (const arg of command.args) args.push(await interpolate(ctx, arg, runtime, command));
   return { ...command, args };
+}
+
+function formatFlowCommand(command: Extract<FlowStatement, { type: 'command' }>): string {
+  return `${command.command}(${command.args.map(formatFlowArg).join(', ')})`;
+}
+
+function formatFlowArg(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 async function interpolate(ctx: FlowExecutionContext, value: string, runtime: FlowRuntime, item: { lineNumber: number; raw: string }): Promise<string> {
