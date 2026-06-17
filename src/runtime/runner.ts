@@ -41,6 +41,9 @@ type BaseContext = {
   sleep: (ms: number) => Promise<void>;
 };
 
+const PROFILE_LAUNCH_MAX_ATTEMPTS = 3;
+const PROFILE_LAUNCH_RETRY_DELAY_MS = 1000;
+
 const FLOW_SCRIPT_SETTING_INPUTS: FlowInputDefinition[] = [
   {
     name: 'hardless',
@@ -147,22 +150,20 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
 
   try {
     if (shouldLaunchProfile) {
-      run = await donut.runProfile(profile.id, {
-        url: 'about:blank',
+      const session = await launchProfileWithRetry({
+        donut,
+        cleanupDonut: new DonutApiClient(options.apiBaseUrl, options.apiToken),
+        profileId: profile.id,
         headless: workflow.kind === 'flow' ? flowHeadlessValue(inputs!, false) : options.headless,
+        bidiConnectTimeoutMs: options.bidiConnectTimeoutMs,
+        bidiCommandTimeoutMs: options.bidiCommandTimeoutMs,
+        signal,
       });
+      run = session.run;
+      bidi = session.bidi;
       launched = true;
 
-      await sleep(4000, signal);
-      const readyProfile = await donut.waitForProfileReady(profile.id, { timeoutMs: 30000 });
-      logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
-
-      const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
-      bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, signal);
-      await connectBidiWithRetry(bidi, wsUrl, signal);
-
-      const page = new PageAutomation(bidi);
-      await page.init();
+      const page = session.page;
 
       const ctx: WorkflowContext = {
         ...baseCtx,
@@ -211,8 +212,72 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
   if (afterKillError) throw afterKillError;
 }
 
+type LaunchProfileOptions = {
+  donut: DonutApiClient;
+  cleanupDonut: DonutApiClient;
+  profileId: string;
+  headless: boolean;
+  bidiConnectTimeoutMs: number;
+  bidiCommandTimeoutMs: number;
+  signal?: AbortSignal;
+};
+
+type LaunchedProfileSession = {
+  run: RunProfileResponse;
+  bidi: BidiClient;
+  page: PageAutomation;
+};
+
+async function launchProfileWithRetry(options: LaunchProfileOptions): Promise<LaunchedProfileSession> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= PROFILE_LAUNCH_MAX_ATTEMPTS; attempt++) {
+    let bidi: BidiClient | undefined;
+    let didLaunch = false;
+
+    try {
+      logger.info(`  Launch profile attempt ${attempt}/${PROFILE_LAUNCH_MAX_ATTEMPTS}...`);
+      const run = await options.donut.runProfile(options.profileId, {
+        url: 'about:blank',
+        headless: options.headless,
+      });
+      didLaunch = true;
+
+      const readyProfile = await options.donut.waitForProfileReady(options.profileId, { timeoutMs: 30000 });
+      logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
+
+      const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
+      bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, options.signal);
+      await connectBidiWithRetry(bidi, wsUrl, options.signal);
+
+      const page = new PageAutomation(bidi);
+      await page.init();
+      return { run, bidi, page };
+    } catch (error) {
+      lastError = error;
+      await cleanupFailedLaunch(options.cleanupDonut, options.profileId, bidi, didLaunch);
+
+      if (options.signal?.aborted || attempt === PROFILE_LAUNCH_MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      logger.info(`  Launch attempt ${attempt}/${PROFILE_LAUNCH_MAX_ATTEMPTS} failed, retrying in ${PROFILE_LAUNCH_RETRY_DELAY_MS}ms...`);
+      await sleep(PROFILE_LAUNCH_RETRY_DELAY_MS, options.signal);
+    }
+  }
+
+  throw lastError;
+}
+
+async function cleanupFailedLaunch(donut: DonutApiClient, profileId: string, bidi: BidiClient | undefined, didLaunch: boolean): Promise<void> {
+  await bidi?.close().catch(() => {});
+  if (didLaunch) {
+    await donut.killProfile(profileId).catch((error: unknown) => logger.error(formatError(error)));
+  }
+}
+
 async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string, signal?: AbortSignal): Promise<void> {
-  const maxRetries = 5;
+  const maxRetries = 3;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {

@@ -5,13 +5,14 @@ import { clearScreen, runWorkflow, type RunnerOptions } from './runtime/runner.j
 import { selectScript } from './runtime/script-loader.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
+import { CURRENT_VERSION, maybeRunUpdateCheck } from './update/index.js';
 
 const program = new Command();
 
 program
   .name('donumate')
   .description('Launch Donut Camoufox profiles and automate them over WebDriver BiDi')
-  .version('0.0.3');
+  .version(CURRENT_VERSION);
 
 type CliOptions = {
   api?: string;
@@ -22,6 +23,7 @@ type CliOptions = {
   commandTimeout?: string;
   script?: string;
   input?: string[];
+  updateCheck?: boolean;
 };
 
 function collectInput(value: string, previous: string[]): string[] {
@@ -47,7 +49,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--headless', 'Launch profile headless')
     .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
-    .option('--input <key=value>', 'Set .flow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, []);
+    .option('--input <key=value>', 'Set .flow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
+    .option('--no-update-check', 'Skip checking GitHub releases for updates');
 }
 
 // Register global SIGINT handler
@@ -62,6 +65,8 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
     connectTimeout: options.connectTimeout,
     commandTimeout: options.commandTimeout,
   });
+
+  await maybeRunUpdateCheck({ currentVersion: CURRENT_VERSION, updateCheck: options.updateCheck });
 
   const fixedScript = scriptSpec ?? options.script;
   let lastSelectedScript: string | undefined = undefined;

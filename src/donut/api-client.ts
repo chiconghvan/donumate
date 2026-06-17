@@ -64,7 +64,7 @@ export class DonutApiClient {
     while (true) {
       this.throwIfAborted();
       const profile = await this.getProfile(profileId);
-      if (profile.is_running || (profile.process_id != null && profile.process_id > 0)) {
+      if (profile.is_running === true && profile.process_id != null && profile.process_id > 0) {
         return profile;
       }
       if (Date.now() >= deadline) {

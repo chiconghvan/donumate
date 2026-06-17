@@ -1,10 +1,26 @@
 {
   "name": "donumate",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Standalone CLI for launching Donut Camoufox profiles and automating them over WebDriver BiDi.",
   "type": "module",
   "bin": {
     "donumate": "./dist/cli.js"
+  },
+  "pkg": {
+    "scripts": [
+      "dist/**/*.js"
+    ],
+    "assets": [
+      "scripts/**/*",
+      "README.md"
+    ],
+    "targets": [
+      "node22-win-x64",
+      "node22-linux-x64",
+      "node22-macos-x64",
+      "node22-macos-arm64"
+    ],
+    "outputPath": "release"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",

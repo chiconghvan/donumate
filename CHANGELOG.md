@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.7
+
+### New features
+
+- **Windows exe auto-update** — CLI checks GitHub Releases at startup, prompts via Ink, downloads newer Windows x64 exe, and hands off replacement to a detached updater script.
+- **`--no-update-check`** — skips GitHub update checks for any CLI command.
+- **Native release workflow** — GitHub Actions builds Windows, Linux, and macOS binaries with `@yao-pkg/pkg` and publishes tag releases with artifacts.
+
+### Changes
+
+- CLI version now reads from `package.json` instead of a hardcoded value.
+- Profile launch now retries failed launch/connect attempts and cleans up partial launches before retrying.
+- Donut profile readiness now requires both `is_running === true` and a positive `process_id`.
+
 ## 0.0.6
 
 ### New features
