@@ -2,7 +2,7 @@ import type { GitHubRelease, UpdateInfo } from './types.js';
 import { isNewerVersion, normalizeVersion } from './version.js';
 
 const UPDATE_REPO_OWNER = 'chiconghvan';
-const UPDATE_REPO_NAME = 'donut-camoufox-bidi-cli';
+const UPDATE_REPO_NAME = 'donumate';
 const UPDATE_ASSET_PATTERN = /^donumate.*win.*x64.*\.exe$/i;
 const LATEST_RELEASE_URL = `https://api.github.com/repos/${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}/releases/latest`;
 
