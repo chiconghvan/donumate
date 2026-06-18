@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { loadConfig } from './config/load-config.js';
+import { createFlowScript } from './runtime/create-flow-script.js';
 import { clearScreen, runWorkflow, type RunnerOptions } from './runtime/runner.js';
 import { selectScript } from './runtime/script-loader.js';
+import { runListPicker } from './ui/list-picker.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
 import { CURRENT_VERSION, maybeRunUpdateCheck } from './update/index.js';
@@ -38,6 +40,20 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
     overrides[value.slice(0, separator)] = value.slice(separator + 1);
   }
   return overrides;
+}
+
+type RootAction = 'run-scripts' | 'create-flow' | 'exit';
+
+async function selectRootAction(): Promise<RootAction | undefined> {
+  return runListPicker<RootAction>({
+    title: 'Donumate',
+    options: [
+      { label: 'Run Scripts', value: 'run-scripts' },
+      { label: 'Create flow script', value: 'create-flow' },
+      { label: 'Exit', value: 'exit' },
+    ],
+    cancelHint: 'exit',
+  });
 }
 
 // Shared options helper
@@ -77,7 +93,18 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
   while (true) {
     let selectedScript: string;
     try {
-      selectedScript = fixedScript ?? await selectScript(lastSelectedScript);
+      if (fixedScript) {
+        selectedScript = fixedScript;
+      } else {
+        const rootAction = await selectRootAction();
+        if (rootAction === undefined || rootAction === 'exit') return;
+        if (rootAction === 'create-flow') {
+          const createdScript = await createFlowScript();
+          if (createdScript) console.log(`Created ${createdScript}`);
+          continue;
+        }
+        selectedScript = await selectScript(lastSelectedScript);
+      }
       lastSelectedScript = selectedScript;
     } catch (error) {
       if (error instanceof AppError && error.message === 'Exit') {

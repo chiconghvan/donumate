@@ -26,6 +26,29 @@ Canonical `.flow` syntax and command/function reference. Command call style: `na
   - `'it''s ok'` -> `it's ok`
 - Windows path viết thẳng: `"C:\Temp\note.txt"`.
 
+## Create flow script editor
+
+Run `pnpm start`, choose `Create flow script`, enter a script name, then edit the new `.flow` file in the Ink editor. File saves under `./scripts/<name>.flow`.
+
+Editor keys:
+
+- Type command prefix to show autocomplete. Example: `http` shows `httpRequest` and `httpDownload`.
+- `↑` / `↓` selects autocomplete item.
+- `Enter` / `Tab` inserts selected snippet when dropdown is open.
+- `Ctrl+Space` forces suggestions.
+- `Ctrl+S` validates script syntax and saves.
+- `Esc` closes autocomplete first, then cancels editor.
+
+Snippet examples:
+
+```flow
+nav('')
+delay(,)
+httpRequest('','','','',rDelay())
+```
+
+Text inputs use quotes (`''`). Number/boolean slots stay empty/unquoted so you can type raw values.
+
 ## Raw string ví dụ
 
 ```flow
@@ -183,6 +206,7 @@ readExcel("C:\Temp\data.xlsx", A, 2)
 writeExcel("C:\Temp\data.xlsx", A, 2, "value")
 contains("ABCD", "A")
 contains("", keyword)
+code = 2FA(YAFBRQVDXAOODIOBTGURV43MJKCXLZCI)
 ```
 
 ### String check

@@ -79,18 +79,18 @@ export async function selectScript(defaultScript?: string): Promise<string> {
         label: `${file}`,
         value: file,
       })),
-    { label: 'Exit', value: '__exit__' },
+    { label: 'Back', value: '__exit__' },
   ];
 
-  if (choices.length === 1) { // Only 'Exit' exists
+  if (choices.length === 1) { // Only 'Back' exists
     throw new AppError('No workflow scripts found. Add a .ts or .flow file in scripts/, or pass --script <path>.');
   }
 
   const selected = await runListPicker({
-    title: `Select workflow script (${choices.length - 1} found)`,
+    title: `Run Scripts (${choices.length - 1} found)`,
     options: choices,
     initialValue: defaultScript,
-    cancelHint: 'exit',
+    cancelHint: 'back',
   });
 
   if (selected === undefined || selected === '__exit__') {

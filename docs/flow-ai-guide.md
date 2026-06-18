@@ -23,7 +23,16 @@ Dùng file này để:
 - cần gọi API, xử lý dữ liệu lớn, parse phức tạp
 - cần reuse helper code hoặc tách module
 
-## 3) Cách AI phải trả lời yêu cầu
+## 3) Create flow script CLI
+
+Trong CLI interactive (`pnpm start`), root menu có:
+
+- `Run Scripts`: chạy script có sẵn trong `./scripts/` hoặc built-in.
+- `Create flow script`: hỏi tên script, lưu file mới vào `./scripts/`, mở Ink editor có autocomplete từ runtime `.flow` catalog.
+
+Autocomplete chèn snippet theo loại input: text có quote, number/boolean để trống raw. Ví dụ `nav` -> `nav('')`, `delay` -> `delay(,)`, `httpRequest` -> `httpRequest('','','','',rDelay())`.
+
+## 4) Cách AI phải trả lời yêu cầu
 
 Khi user muốn tạo script:
 1. tóm tắt mục tiêu 1 câu
@@ -33,7 +42,7 @@ Khi user muốn tạo script:
 5. nêu input cần khai báo
 6. nêu command/XPath chính
 
-## 4) Template nhanh để sinh `.flow`
+## 5) Template nhanh để sinh `.flow`
 
 ```flow
 inputs {
@@ -59,7 +68,7 @@ after() {
 }
 ```
 
-## 5) Pattern theo nhu cầu
+## 6) Pattern theo nhu cầu
 
 ### A. Login / form fill
 Dùng:
@@ -104,6 +113,7 @@ Dùng:
 - `readJson`
 - `randomNum`
 - `fileReadAllText`
+- `2FA` (fetch TOTP token từ 2fa.live)
 
 ### E. String check
 Dùng:
@@ -111,7 +121,7 @@ Dùng:
 - `if contains(str1, str2)` để test string có chứa string khác
 - `if contains("", str2)` để test `str2` có rỗng không
 
-## 6) Quy tắc chọn command
+## 7) Quy tắc chọn command
 
 - page/browser action → chỉ `running()`
 - chuẩn bị/log dữ liệu → `before()`
@@ -121,7 +131,7 @@ Dùng:
 - command/function call luôn dạng `name(arg1, arg2)`
 - command names camelCase: `navUrl`, `waitLoad`, `fileUpload`, `httpRequest`, `readExcel`
 
-## 7) Cách chỉnh sửa script `.flow` có sẵn
+## 8) Cách chỉnh sửa script `.flow` có sẵn
 
 Khi user đưa file `.flow` cũ, AI cần:
 1. giữ command cũ nếu đúng mục tiêu
@@ -132,7 +142,7 @@ Khi user đưa file `.flow` cũ, AI cần:
 6. đưa cleanup vào `after()`
 7. tối giản XPath và quote string
 
-## 8) Output format gợi ý cho AI
+## 9) Output format gợi ý cho AI
 
 ### Nếu tạo mới
 - `Mục tiêu`

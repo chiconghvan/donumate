@@ -383,6 +383,15 @@ function tokenizeExpression(text: string, lineNumber: number): ExprToken[] {
         value += text[index] ?? '';
         index += 1;
       }
+      // Digit-prefixed identifier like 2FA: if followed by letter/underscore, treat as identifier
+      if (value.length <= 2 && index < text.length && /[A-Za-z_]/.test(text[index] ?? '')) {
+        while (index < text.length && /[A-Za-z0-9_-]/.test(text[index] ?? '')) {
+          value += text[index] ?? '';
+          index += 1;
+        }
+        tokens.push({ type: 'identifier', value });
+        continue;
+      }
       tokens.push({ type: 'number', value });
       continue;
     }

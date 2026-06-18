@@ -3,6 +3,8 @@
 Tài liệu ngắn: giải thích input của từng command + ví dụ command thực tế mẫu.
 Tất cả call đều dùng `name(arg1, arg2)`.
 
+CLI có `Create flow script` để tạo file mới trong `./scripts/` và mở Ink editor có autocomplete. Gõ prefix như `http` để thấy `httpRequest` / `httpDownload`, dùng ↑/↓ chọn, Enter/Tab chèn snippet. Ví dụ: `nav` -> `nav('')`, `delay` -> `delay(,)`, `httpRequest` -> `httpRequest('','','','',rDelay())`.
+
 ## 1) Script block
 
 ### `inputs { ... }`
@@ -31,10 +33,12 @@ Khai báo input cho UI/CLI.
 - Input: 1 số ms, hoặc 2 số ms để random trong khoảng.
 - Mẫu: `delay(1000)`
 - Mẫu: `delay(1000, 3000)`
+- Autocomplete snippet: `delay(,)`
 
 ### `httpRequest`
 - Input: `url`, `method`, `headersJSON`, `body...`
 - `headersJSON` và body là text raw, không cần escape quote JSON.
+- Autocomplete snippet: `httpRequest('','','','',rDelay())`.
 - Mẫu:
   ```flow
   httpRequest("https://api.example.com/user", POST, {})
@@ -126,6 +130,12 @@ Khai báo input cho UI/CLI.
 - Input: `min`, `max`
 - Mẫu: `randomNum(1, 10)`
 
+### `2FA(...)`
+- Input: `secretKey`
+- Trả về: TOTP token string từ https://2fa.live
+- Mẫu: `code = 2FA(YAFBRQVDXAOODIOBTGURV43MJKCXLZCI)`
+- Dùng được trong cả `before()`, `running()`, `after()`
+
 ## 4) Command chỉ dùng `running()`
 
 ### `nav` / `goto` / `navUrl`
@@ -133,6 +143,7 @@ Khai báo input cho UI/CLI.
 - Mẫu: `nav("https://example.com")`
 - Mẫu: `goto("https://example.com")`
 - Mẫu: `navUrl("https://example.com")`
+- Autocomplete snippet: `nav('')`
 
 ### `newTab`
 - Input: optional `url`

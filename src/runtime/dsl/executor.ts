@@ -1,8 +1,11 @@
+import { request as httpRequest } from 'http';
+import { request as httpsRequest } from 'https';
 import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import * as XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
 import type { WorkflowContext, WorkflowScript } from '../types.js';
+import { COMMAND_LIST, FUNCTION_LIST, PAGE_COMMANDS, PAGE_FUNCTIONS, RDELAY_DESC } from './catalog.js';
 import { parseExpression, parseFlowProgram } from './parser.js';
 import type { FlowBinaryOperator, FlowBlockName, FlowExpression, FlowInputValue, FlowProgram, FlowStatement, FlowValue } from './types.js';
 
@@ -10,65 +13,6 @@ const DEFAULT_WAIT_TIMEOUT_MS = 10000;
 const MAX_LOOP_ITERATIONS = 10000;
 const RDELAY_MIN_MS = 1000;
 const RDELAY_MAX_MS = 3000;
-
-const ALL_COMMANDS = [
-  { name: 'goto', aliases: ['nav', 'navUrl', 'navurl'], desc: 'Navigate to URL' },
-  { name: 'newTab', aliases: [], desc: 'Open and activate a new tab, optionally with URL' },
-  { name: 'closeTab', aliases: [], desc: 'Close active tab' },
-  { name: 'activeTab', aliases: [], desc: 'Activate tab by zero-based index or context id' },
-  { name: 'backNav', aliases: [], desc: 'Navigate browser history back' },
-  { name: 'reloadNav', aliases: [], desc: 'Reload current page' },
-  { name: 'getUrl', aliases: [], desc: 'Store current URL in pageUrl' },
-  { name: 'waitUrlChange', aliases: [], desc: 'Wait until URL differs from given URL' },
-  { name: 'waitLoad', aliases: [], desc: 'Wait for page load (2s settle + readyState)' },
-  { name: 'waitElement', aliases: ['waitXPath'], desc: 'Wait for XPath match (default 10s)' },
-  { name: 'getElementAttribute', aliases: [], desc: 'Store XPath attribute in elementAttribute' },
-  { name: 'getElementText', aliases: [], desc: 'Store XPath text in elementText' },
-  { name: 'countElement', aliases: [], desc: 'Store XPath match count in elementCount' },
-  { name: 'click', aliases: [], desc: 'Click element by XPath' },
-  { name: 'typeText', aliases: ['type'], desc: 'Type text into element' },
-  { name: 'pasteText', aliases: [], desc: 'Paste text via clipboard' },
-  { name: 'moveMouse', aliases: [], desc: 'Move mouse to XPath element' },
-  { name: 'scroll', aliases: [], desc: 'Scroll page by pixels' },
-  { name: 'js', aliases: ['executeJs', 'executeJS'], desc: 'Execute JavaScript and store result in jsResult' },
-  { name: 'fileUpload', aliases: [], desc: 'Upload file into input[type=file] XPath when supported' },
-  { name: 'info', aliases: [], desc: 'Log page title and URL' },
-  { name: 'httpRequest', aliases: [], desc: 'Run HTTP request and store httpStatus/httpHeaders/httpBody/httpUrl' },
-  { name: 'httpDownload', aliases: [], desc: 'Download URL to file and store downloadPath/downloadBytes' },
-  { name: 'fileWriteAllText', aliases: [], desc: 'Overwrite a text file' },
-  { name: 'writeExcel', aliases: [], desc: 'Write a value to an Excel cell' },
-  { name: 'delay', aliases: ['sleep'], desc: 'Sleep N ms (or N-M for random range)' },
-  { name: 'log', aliases: [], desc: 'Log message' },
-  { name: 'help', aliases: [], desc: 'Show available commands' },
-];
-const RDELAY_DESC = '  rDelay — append to any command for random delay after execution (optional), e.g. rDelay or rDelay(3000,4000)';
-const PAGE_COMMANDS = new Set([
-  'goto', 'nav', 'navurl', 'newtab', 'closetab', 'activetab', 'backnav', 'reloadnav', 'geturl', 'waiturlchange',
-  'waitload', 'waitelement', 'waitxpath', 'getelementattribute', 'getelementtext', 'countelement', 'click', 'typetext',
-  'type', 'pastetext', 'movemouse', 'scroll', 'js', 'executejs', 'fileupload', 'info',
-].map((item) => item.toLowerCase()));
-const ALL_FUNCTIONS = [
-  { name: 'getUrl', aliases: [], desc: 'Return current page URL' },
-  { name: 'httpRequest', aliases: [], desc: 'Run HTTP request and return raw response text' },
-  { name: 'js', aliases: ['executeJs', 'executeJS'], desc: 'Execute JavaScript and return result' },
-  { name: 'getElementText', aliases: [], desc: 'Return XPath text' },
-  { name: 'getElementAttribute', aliases: [], desc: 'Return XPath attribute' },
-  { name: 'countElement', aliases: [], desc: 'Return XPath match count' },
-  { name: 'hasElement', aliases: ['existsXPath'], desc: 'Check XPath exists' },
-  { name: 'splitText', aliases: [], desc: 'Split text by delimiter and return an array' },
-  { name: 'contains', aliases: [], desc: 'Check whether one string contains another, or check whether second string is empty when first is empty' },
-  { name: 'readJson', aliases: [], desc: 'Read JSON value by dotted path' },
-  { name: 'randomNum', aliases: [], desc: 'Return random integer between min and max' },
-  { name: 'fileExist', aliases: [], desc: 'Check file exists' },
-  { name: 'folderExist', aliases: [], desc: 'Check folder exists' },
-  { name: 'readExcel', aliases: [], desc: 'Read value from Excel cell by header and row' },
-  { name: 'fileReadAllText', aliases: [], desc: 'Read entire text file' },
-];
-const PAGE_FUNCTIONS = new Set([
-  'haselement', 'existsxpath', 'geturl', 'js', 'executejs', 'getelementtext', 'getelementattribute', 'countelement',
-]);
-const COMMAND_LIST = ALL_COMMANDS.map((c) => `  ${c.name}${c.aliases.length ? ` (${c.aliases.join('/')})` : ''} — ${c.desc}`).join('\n');
-const FUNCTION_LIST = ALL_FUNCTIONS.map((f) => `  ${f.name}${f.aliases.length ? ` (${f.aliases.join('/')})` : ''} — ${f.desc}`).join('\n');
 
 type FlowExecutionContext = Partial<WorkflowContext> & {
   log: (...args: unknown[]) => void;
@@ -197,7 +141,7 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
       rDelayMin = parseInt(match[1], 10);
       rDelayMax = parseInt(match[2], 10);
       args.pop();
-    } else if (lastArg.toLowerCase() === 'rdelay') {
+    } else if (/^rdelay(?:\(\))?$/i.test(lastArg)) {
       hasRDelay = true;
       args.pop();
     }
@@ -436,6 +380,46 @@ async function runHttpRequest(url: string | undefined, method: string | undefine
   return responseText;
 }
 
+async function runHttpGet(url: string, item: { lineNumber: number; raw: string }, runtime: FlowRuntime): Promise<string> {
+  const response = await requestText(url, 'GET', item);
+  runtime.locals.httpStatus = response.status;
+  runtime.locals.httpHeaders = JSON.stringify(response.headers);
+  runtime.locals.httpBody = response.body;
+  runtime.locals.httpUrl = response.url;
+  if (!response.ok) {
+    throw lineError(item, `2FA fetch failed: HTTP ${response.status} ${response.statusText}`);
+  }
+  return response.body;
+}
+
+async function requestText(url: string, method: string, item: { lineNumber: number; raw: string }): Promise<{ ok: boolean; status: number; statusText: string; headers: Record<string, string>; body: string; url: string }> {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    const target = new URL(url);
+    const transport = target.protocol === 'https:' ? httpsRequest : httpRequest;
+    const req = transport(target, { method, headers: { accept: 'application/json' } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const headers: Record<string, string> = {};
+        for (const [key, value] of Object.entries(res.headers)) {
+          headers[key] = Array.isArray(value) ? value.join(', ') : String(value ?? '');
+        }
+        resolvePromise({
+          ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
+          status: res.statusCode ?? 0,
+          statusText: res.statusMessage ?? '',
+          headers,
+          body,
+          url: target.toString(),
+        });
+      });
+    });
+    req.on('error', (error) => rejectPromise(new AppError(`HTTP request failed: ${error instanceof Error ? error.message : String(error)}`, error)));
+    req.end();
+  });
+}
+
 async function executeHttpDownload(item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<void> {
   const [url, savePath] = requireArgs(item, 2);
   const response = await fetch(url);
@@ -572,6 +556,19 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       if (name === 'filereadalltext') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
         return await readFile(resolve(String(args[0] ?? '')), 'utf8');
+      }
+      if (name === '2fa') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        const secret = encodeURIComponent(String(args[0] ?? ''));
+        const responseText = await runHttpGet(`https://2fa.live/tok/${secret}`, item, runtime);
+        let body: { token?: string };
+        try {
+          body = JSON.parse(responseText) as { token?: string };
+        } catch (error) {
+          throw lineError(item, `2FA response is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        if (typeof body.token !== 'string') throw lineError(item, `2FA response missing token field.`);
+        return body.token;
       }
       if (runtime.excelInputs.has(name)) {
         if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);

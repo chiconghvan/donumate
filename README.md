@@ -27,13 +27,19 @@ Edit `.env` if needed.
 
 ## Run
 
-Interactive profile/script selection:
+Interactive root menu:
 
 ```bash
 pnpm dev
 # or
 pnpm start
 ```
+
+Root menu choices:
+
+- `Run Scripts` — open script selector for built-in scripts plus `./scripts/*.ts` and `./scripts/*.flow`.
+- `Create flow script` — ask for script name, save new `.flow` under `./scripts/`, then open Ink editor with runtime command autocomplete.
+- `Exit`
 
 Built-in Threads script:
 
@@ -123,6 +129,14 @@ running() {
 ```
 
 Inputs render in one CLI GUI frame. Use Tab/arrow keys to move, Left/Right to toggle/cycle/open path picker, Enter to submit/open.
+
+Create new scripts from the root `Create flow script` menu. Type a script name, then use the Ink editor:
+
+- type a command prefix like `http` to open autocomplete (`httpRequest`, `httpDownload`)
+- press ↑/↓ to choose, Enter/Tab to insert snippet
+- examples: `nav` -> `nav('')`, `delay` -> `delay(,)`, `httpRequest` -> `httpRequest('','','','',rDelay())`
+- press Ctrl+S to validate and save
+
 
 Hidden script settings are injected automatically when missing:
 
