@@ -1,0 +1,67 @@
+inputs {
+  port: input = "8089"
+  profileName: input = ""
+  profileProxy: input = ""
+  profileId: input = ""
+  inputExcelFile: file
+}
+
+before() {
+}
+
+running() {
+  username = "expression.bg._"
+  nav('https://www.instagram.com/', rDelay(3000,4000))
+  currentUrl = getUrl()
+  if contains(currentUrl, 'suspended')
+    log("Sus")
+  else
+    waitElement('//div[@data-visualcompletion="ignore-dynamic"]//img[contains(@alt,"Ảnh đại diện") or contains(@alt,"profile picture")]/ancestor::a', 60000, rDelay(3000,4000))
+    click('//div[@data-visualcompletion="ignore-dynamic"]//img[contains(@alt,"Ảnh đại diện") or contains(@alt,"profile picture")]/ancestor::a')
+    if hasElement('//div[@role="dialog"]//button[2]')
+      click('//div[@role="dialog"]//button[2]')
+    waitElement('//a[contains(@href,"/accounts/edit/")]', 20000, rDelay(1000,3000))
+    click('//a[contains(@href,"/accounts/edit/")]')
+    waitElement('(//a[contains(@href,"accountscenter")])[1]', 60000, rDelay(2000,3000))
+    click('(//a[contains(@href,"accountscenter")])[1]')
+    waitElement('//a[contains(@href,"/profile")]/ancestor::div[1]', 20000, rDelay(1000,2000))
+    click('//a[contains(@href,"/profile")]/ancestor::div[1]')
+    waitElement('//div[@role="listitem"]//div[contains(@aria-label,"Instagram")]', 50000, rDelay(1000,2000))
+    click('//div[@role="listitem"]//div[contains(@aria-label,"Instagram")]')
+    waitElement('//a[contains(@href,"username")]/ancestor::div[1]', 20000, rDelay(1000,3000))
+    click('//a[contains(@href,"username")]/ancestor::div[1]')
+    waitElement('//input', 30000, rDelay(1000,3000))
+    typeText('//input', '${username}', rDelay(1000,3000))
+    waitElement('//*[@title="GIá trị nhập là Tên người dùng hợp lệ." or @title="Input Username is valid."]', 20000, rDelay(1000,1500))
+    if hasElement('//*[@title="GIá trị nhập là Tên người dùng hợp lệ." or @title="Input Username is valid."]')
+      click('//span[text()="Xong" or text()="Done"]/ancestor::div[@role="button"]')
+      waitElement('//a[contains(@href,"username")]/ancestor::div[1]', 60000, rDelay(3000,5000))
+      if hasElement('//a[contains(@href,"username")]/ancestor::div[1]')
+        log("Done")
+        logPath = 'E:\OneDrive\0. Threads\Log\change-name.txt'
+        if fileExist(logPath)
+          logText = fileReadAllText(logPath)
+          fileWriteAllText(logPath, '${logText}\n[${profileName}]: [${username}] - Done')
+        else
+          fileWriteAllText(logPath, '[${profileName}]: [${username}] - Done')
+      else
+        log("Failed")
+        logPath = 'E:\OneDrive\0. Threads\Log\change-name.txt'
+        if fileExist(logPath)
+          logText = fileReadAllText(logPath)
+          fileWriteAllText(logPath, '${logText}\n[${profileName}]: [${username}] - Error')
+        else
+          fileWriteAllText(logPath, '[${profileName}]: [${username}] - Error')
+    else
+      log("Failed")
+      logPath = 'E:\OneDrive\0. Threads\Log\change-name.txt'
+      if fileExist(logPath)
+        logText = fileReadAllText(logPath)
+        fileWriteAllText(logPath, '${logText}\n[${profileName}]: [${username}] - Error')
+      else
+        fileWriteAllText(logPath, '[${profileName}]: [${username}] - Error')
+  delay(4000, 6000)
+}
+
+after() {
+}

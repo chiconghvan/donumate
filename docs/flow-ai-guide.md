@@ -100,9 +100,16 @@ Dùng:
 - `httpRequest`
 - `httpDownload`
 - `splitText`
+- `contains`
 - `readJson`
 - `randomNum`
 - `fileReadAllText`
+
+### E. String check
+Dùng:
+- `contains`
+- `if contains(str1, str2)` để test string có chứa string khác
+- `if contains("", str2)` để test `str2` có rỗng không
 
 ## 6) Quy tắc chọn command
 

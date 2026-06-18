@@ -1,6 +1,6 @@
 # donumate
 
-Standalone TypeScript CLI for Donut Browser Camoufox profiles.
+Standalone TypeScript CLI for Donut Browser Camoufox profiles, run via `pnpm dev` or `pnpm start`.
 
 Flow:
 
@@ -31,30 +31,32 @@ Interactive profile/script selection:
 
 ```bash
 pnpm dev
+# or
+pnpm start
 ```
 
 Built-in Threads script:
 
 ```bash
-pnpm dev threads --profile <profile-id>
+pnpm start threads --profile <profile-id>
 ```
 
 Run a `.flow` script:
 
 ```bash
-pnpm dev run --profile <profile-id> --script ./scripts/example.flow
+pnpm start run --profile <profile-id> --script ./scripts/example.flow
 ```
 
 Override `.flow` inputs:
 
 ```bash
-pnpm dev run --profile <profile-id> --script ./scripts/example.flow --input startUrl=https://example.com --input mode=safe
+pnpm start run --profile <profile-id> --script ./scripts/example.flow --input startUrl=https://example.com --input mode=safe
 ```
 
 Override API:
 
 ```bash
-pnpm dev threads --api http://127.0.0.1:10108
+pnpm start threads --api http://127.0.0.1:10108
 ```
 
 ## Options
@@ -67,11 +69,21 @@ pnpm dev threads --api http://127.0.0.1:10108
 --connect-timeout <ms>      WebSocket connect timeout
 --command-timeout <ms>      BiDi command timeout
 --input <key=value>         Set .flow input value; repeatable
+--no-update-check           Skip GitHub release check
 ```
 
 ## .flow scripts
 
 `.flow` supports 3 lifecycle blocks:
+
+- `inputs { ... }`
+- `before() { ... }`
+- `running() { ... }`
+- `after() { ... }`
+
+Canonical call style: `name(arg1, arg2)`.
+
+Parser also accepts `before run profile`, `run profile`, and `after kill profile`, but docs use short form.
 
 ```flow
 inputs {
@@ -81,48 +93,50 @@ inputs {
   outputDir: folder
   dryRun: checkbox = false
   mode: comboBox ["fast", "safe"] = "safe"
+  excel: inputExcelFile
 }
 
-before run profile {
+before() {
   log("Before launch: ${mode}")
 }
 
-run profile {
+running() {
   nav("${startUrl}")
   waitLoad()
   info()
 }
 
-after kill profile {
+after() {
   log("Browser killed")
 }
 ```
 
 > Note: `.flow` strings are raw. Backslashes stay literal (`"C:\Temp\note.txt"`), commas inside quotes do not split args, and embedded same quotes use doubled quotes (`"He said ""hi"""`).
 
-```flow
-before run profile {
-  httpRequest("https://example.com", POST, {
-    "content-type": "application/json"
-  }, {
-    "ok": true,
-    "message": "hello, world"
-  })
+Random delay after command:
 
-  fileReadAllText("C:\Temp\note.txt")
-  httpDownload("https://example.com/image.png", "C:\Temp\download.png")
+```flow
+running() {
+  nav("https://example.com") rDelay
+  click("//button") rDelay(3000,4000)
 }
 ```
 
 Inputs render in one CLI GUI frame. Use Tab/arrow keys to move, Left/Right to toggle/cycle/open path picker, Enter to submit/open.
+
+Hidden script settings are injected automatically when missing:
+
+- `hardless: checkbox = false`
+- `threads: number = 1`
+- `inputExcelFile: inputExcelFile = ""`
 
 Legacy flat `.flow` command files still run as main logic.
 
 More `.flow` commands:
 
 ```flow
-run profile {
-  set page = "https://example.com"
+running() {
+  page = "https://example.com"
   navUrl("${page}")
   waitLoad()
   getUrl()
@@ -131,22 +145,24 @@ run profile {
   countElement("//a")
   scroll(500)
   js("document.title")
+  delay(1000, 3000)
 
   for i = 0; i < 10; i = i + 1
     if i == 2
       nextLoop
     if i == 5
       exitLoop
-    log "i=${i}"
+    log("i=${i}")
 }
 
-before run profile {
+before() {
   httpRequest("https://example.com", GET, {})
   httpDownload("https://example.com/image.png", "./downloads/image.png")
+  fileReadAllText("C:\Temp\note.txt")
 }
 ```
 
-Browser/page commands only run inside `run profile`. HTTP commands can run in any block. Full docs: `docs/flow-scripting.md`.
+Browser/page commands only run inside `running()`. HTTP/file commands can run in any block. Full docs: `docs/flow-scripting.md`.
 
 ## Build
 

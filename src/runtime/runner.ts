@@ -42,7 +42,7 @@ type BaseContext = {
 };
 
 const PROFILE_LAUNCH_MAX_ATTEMPTS = 3;
-const PROFILE_LAUNCH_RETRY_DELAY_MS = 1000;
+const PROFILE_LAUNCH_RETRY_DELAY_MS = 10000;
 
 const FLOW_SCRIPT_SETTING_INPUTS: FlowInputDefinition[] = [
   {
@@ -288,8 +288,8 @@ async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string, signal?: Ab
       lastError = error as Error;
       if (signal?.aborted) break;
       if (attempt < maxRetries) {
-        logger.info(`  BiDi attempt ${attempt}/${maxRetries} failed, retrying in 1s...`);
-        await sleep(1000, signal);
+        logger.info(`  BiDi attempt ${attempt}/${maxRetries} failed, retrying in 10s...`);
+        await sleep(10000, signal);
       }
     }
   }

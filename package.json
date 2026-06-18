@@ -1,6 +1,6 @@
 {
   "name": "donumate",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Standalone CLI for launching Donut Camoufox profiles and automating them over WebDriver BiDi.",
   "type": "module",
   "bin": {

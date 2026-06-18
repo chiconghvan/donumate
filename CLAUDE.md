@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Standalone TypeScript CLI that launches Donut Browser Camoufox profiles and automates them over WebDriver BiDi. Core split:
 
 - `src/cli.ts` parses commands/options with `commander`, then calls the runtime runner.
-- `src/runtime/runner.ts` owns profile lifecycle: load script, collect `.flow` inputs, select profile, run pre-launch flow block, launch profile, wait ready, connect BiDi, run main script, close BiDi, kill profile, then run post-kill flow block.
+- `src/runtime/runner.ts` owns profile lifecycle: load script, collect `.flow` inputs, select profile, run pre-launch flow block, launch profile, wait ready, connect BiDi, run main script, close BiDi, kill profile, then run post-kill flow block. It also handles retries, injected flow settings, input-state restore/save, update check, and headless overrides from `.flow` inputs.
 - User automation lives in either TypeScript scripts (`export default async function(ctx)`) or `.flow` DSL scripts.
 
 Prerequisites: Donut Browser running with REST API enabled at `http://127.0.0.1:10108`; at least one Camoufox profile.
@@ -22,6 +22,8 @@ pnpm start                # Run CLI via tsx, interactive script/profile selectio
 pnpm start threads        # Run built-in Threads workflow
 pnpm start run --script ./scripts/example.flow --profile <id>
 ```
+
+`--no-update-check` skips GitHub release check.
 
 No test runner is configured in `package.json`; use `pnpm typecheck` as current verification. There is no single-test command until a test framework is added.
 
@@ -75,13 +77,13 @@ Runner flow for `.flow`:
 1. Load `.flow` and parse input definitions/blocks.
 2. Collect inputs in one terminal UI frame (`src/ui/run-flow-input-form.ts`).
 3. List/select profile.
-4. Execute `before run profile` block without page/BiDi access.
+4. Execute `before()` block without page/BiDi access.
 5. Launch profile with `GET /v1/profiles/{id}/run`.
 6. Wait until profile is running.
 7. Connect WebDriver BiDi at `ws://127.0.0.1:{remote_debugging_port}/session` unless API supplies `ws_url`.
 8. Initialize `PageAutomation`.
-9. Execute TS script or `.flow` `run profile` block.
-10. Close BiDi, kill profile, execute `.flow` `after kill profile` block.
+9. Execute TS script or `.flow` `running()` block.
+10. Close BiDi, kill profile, execute `.flow` `after()` block.
 
 ### BiDi/page automation
 
@@ -112,7 +114,7 @@ export default async function(ctx: WorkflowContext) {
 }
 ```
 
-`WorkflowContext` includes `profile`, `run`, `page`, `bidi`, `log`, `sleep`, `inputs`, and stringified `args`.
+`WorkflowContext` includes `profile`, `run`, `page`, `bidi`, `log`, `sleep`, `inputs`, and stringified `args`. `inputs` is typed values; `args` is stringified input map.
 
 ### `.flow` scripts
 
@@ -125,22 +127,22 @@ inputs {
   enabled: checkbox = true
 }
 
-before run profile {
-  log "Before launch: ${mode}"
+before() {
+  log("Before launch: ${mode}")
 }
 
-run profile {
-  nav "${startUrl}"
-  waitLoad
-  info
+running() {
+  nav("${startUrl}")
+  waitLoad()
+  info()
 }
 
-after kill profile {
-  log "Browser killed"
+after() {
+  log("Browser killed")
 }
 ```
 
-Supported input types: `input` (auto text/number), `text`, `number`, `file`, `folder`, `checkbox`, `comboBox`. Inputs are interpolated as `${name}` inside command args. Full user docs live in `docs/flow-scripting.md`.
+Supported input types: `input` (auto text/number), `text`, `number`, `file`, `folder`, `checkbox`, `comboBox`, `inputExcelFile`. Inputs are interpolated as `${name}` inside command args. Full user docs live in `docs/flow-scripting.md`.
 
 Legacy flat `.flow` scripts without block headers are still treated as main logic.
 

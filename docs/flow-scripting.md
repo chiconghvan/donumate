@@ -1,6 +1,17 @@
 # Flow scripting
 
+Canonical `.flow` syntax and command/function reference. Command call style: `name(arg1, arg2)`.
+
 `*.flow` dùng syntax call chuẩn: `name(arg1, arg2)`.
+
+## Block syntax
+
+- `inputs { ... }`
+- `before() { ... }`
+- `running() { ... }`
+- `after() { ... }`
+- Parser cũng nhận `before run profile`, `run profile`, `after kill profile`, nhưng short form là canonical.
+- Legacy flat script không block vẫn chạy, toàn file xem như main block.
 
 ## Syntax
 
@@ -46,6 +57,8 @@ readJson({
 inputs {
   url: input = "https://example.com"
   xpath: text = "//button"
+  windowWidth: number = 1280
+  windowHeight: number = 720
 }
 
 before() {
@@ -168,12 +181,31 @@ readJson({
 }, code)
 readExcel("C:\Temp\data.xlsx", A, 2)
 writeExcel("C:\Temp\data.xlsx", A, 2, "value")
+contains("ABCD", "A")
+contains("", keyword)
+```
+
+### String check
+
+- `contains(str1, str2)` trả `true` nếu `str1` chứa `str2`.
+- `contains("", str2)` dùng để check `str2` có rỗng không.
+
+```flow
+if contains(title, "Donut") {
+  log("match")
+}
+
+if contains("", keyword) {
+  log("keyword empty")
+}
 ```
 
 ## Notes
 
 - `before()` / `after()` không có page/browser.
 - `running()` mới dùng command browser.
+- `windowWidth` / `windowHeight` trong `inputs {}` là Scripts Setting, runtime sẽ resize window ngay sau khi connect BiDi, trước bước chạy script.
 - Alias cũ kiểu `type` vẫn chạy, nhưng tên chuẩn là camelCase.
 - Tất cả command/function call đều phải dùng ngoặc đơn.
+- Parser vẫn nhận long-form block alias, nhưng short form là chuẩn.
 - Legacy flat script không có block vẫn chạy, nhưng syntax chuẩn mới là block + call.

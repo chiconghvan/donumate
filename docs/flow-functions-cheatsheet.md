@@ -116,11 +116,17 @@ Khai báo input cho UI/CLI.
 - Input: `text`, `delimiter`
 - Mẫu: `splitText("a,b,c", ",")`
 
+### `contains(...)`
+- Input: `str1`, `str2`
+- `contains("ABCD", "A")` → `true`
+- `contains("ABCD", "E")` → `false`
+- `contains("", str2)` → check `str2` rỗng hay không
+
 ### `randomNum(...)`
 - Input: `min`, `max`
 - Mẫu: `randomNum(1, 10)`
 
-## 4) Command chỉ dùng `running`
+## 4) Command chỉ dùng `running()`
 
 ### `nav` / `goto` / `navUrl`
 - Input: `url`
@@ -280,3 +286,4 @@ Script cũ không có block vẫn chạy, nhưng syntax chuẩn mới là `name(
 - `before()` : `log`, `sleep`, `httpRequest`, `fileWriteAllText`, `writeExcel`
 - `running()` : `nav`, `click`, `typeText`, `waitLoad`, `info`
 - `after()` : `log`, `sleep`, `httpRequest`, `fileWriteAllText`, `writeExcel`
+- Parser cũng nhận `before run profile`, `run profile`, `after kill profile`, nhưng short form là chuẩn.

@@ -8,6 +8,8 @@ import type { FlowBinaryOperator, FlowBlockName, FlowExpression, FlowInputValue,
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10000;
 const MAX_LOOP_ITERATIONS = 10000;
+const RDELAY_MIN_MS = 1000;
+const RDELAY_MAX_MS = 3000;
 
 const ALL_COMMANDS = [
   { name: 'goto', aliases: ['nav', 'navUrl', 'navurl'], desc: 'Navigate to URL' },
@@ -39,6 +41,7 @@ const ALL_COMMANDS = [
   { name: 'log', aliases: [], desc: 'Log message' },
   { name: 'help', aliases: [], desc: 'Show available commands' },
 ];
+const RDELAY_DESC = '  rDelay — append to any command for random delay after execution (optional), e.g. rDelay or rDelay(3000,4000)';
 const PAGE_COMMANDS = new Set([
   'goto', 'nav', 'navurl', 'newtab', 'closetab', 'activetab', 'backnav', 'reloadnav', 'geturl', 'waiturlchange',
   'waitload', 'waitelement', 'waitxpath', 'getelementattribute', 'getelementtext', 'countelement', 'click', 'typetext',
@@ -53,6 +56,7 @@ const ALL_FUNCTIONS = [
   { name: 'countElement', aliases: [], desc: 'Return XPath match count' },
   { name: 'hasElement', aliases: ['existsXPath'], desc: 'Check XPath exists' },
   { name: 'splitText', aliases: [], desc: 'Split text by delimiter and return an array' },
+  { name: 'contains', aliases: [], desc: 'Check whether one string contains another, or check whether second string is empty when first is empty' },
   { name: 'readJson', aliases: [], desc: 'Read JSON value by dotted path' },
   { name: 'randomNum', aliases: [], desc: 'Return random integer between min and max' },
   { name: 'fileExist', aliases: [], desc: 'Check file exists' },
@@ -180,201 +184,235 @@ async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowSt
 }
 
 async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<void> {
-  const command = item.command.toLowerCase();
-
-  switch (command) {
-    case 'goto':
-    case 'nav':
-    case 'navurl': {
-      const [url] = requireArgs(item, 1);
-      await requirePage(ctx, item).goto(url);
-      return;
+  // Extract optional rDelay from args: rDelay or rDelay(min,max)
+  let hasRDelay = false;
+  let rDelayMin = RDELAY_MIN_MS;
+  let rDelayMax = RDELAY_MAX_MS;
+  const args = [...item.args];
+  if (args.length > 0) {
+    const lastArg = args[args.length - 1] ?? '';
+    const match = lastArg.match(/^rdelay\((\d+),(\d+)\)$/i);
+    if (match) {
+      hasRDelay = true;
+      rDelayMin = parseInt(match[1], 10);
+      rDelayMax = parseInt(match[2], 10);
+      args.pop();
+    } else if (lastArg.toLowerCase() === 'rdelay') {
+      hasRDelay = true;
+      args.pop();
     }
+  }
+  const cmd = { ...item, args };
 
-    case 'newtab': {
-      const [url] = requireArgs(item, 0, 1);
-      await requirePage(ctx, item).newTab(url);
-      return;
+  const runCmd = async (): Promise<void> => {
+    const command = cmd.command.toLowerCase();
+
+    switch (command) {
+      case 'goto':
+      case 'nav':
+      case 'navurl': {
+        const [url] = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).goto(url);
+        return;
+      }
+
+      case 'newtab': {
+        const [url] = requireArgs(cmd, 0, 1);
+        await requirePage(ctx, cmd).newTab(url);
+        return;
+      }
+
+      case 'closetab': {
+        requireArgs(cmd, 0);
+        await requirePage(ctx, cmd).closeTab();
+        return;
+      }
+
+      case 'activetab': {
+        const [target] = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).activeTab(target);
+        return;
+      }
+
+      case 'backnav': {
+        const [timeout] = requireArgs(cmd, 0, 1);
+        await requirePage(ctx, cmd).backNav(parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, cmd));
+        return;
+      }
+
+      case 'reloadnav': {
+        requireArgs(cmd, 0);
+        await requirePage(ctx, cmd).reloadNav();
+        return;
+      }
+
+      case 'geturl': {
+        requireArgs(cmd, 0);
+        runtime.locals.pageUrl = await requirePage(ctx, cmd).getUrl();
+        return;
+      }
+
+      case 'waiturlchange': {
+        const [url, timeout] = requireArgs(cmd, 1, 2);
+        runtime.locals.pageUrl = await requirePage(ctx, cmd).waitUrlChange(url, parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, cmd));
+        ctx.log(`pageUrl=${runtime.locals.pageUrl}`);
+        return;
+      }
+
+      case 'waitload': {
+        const [settleMs] = requireArgs(cmd, 0, 1);
+        const settle = settleMs === undefined ? 2000 : parseNumber(settleMs, cmd);
+        if (settle > 0) await ctx.sleep(settle);
+        await requirePage(ctx, cmd).waitForLoad();
+        return;
+      }
+
+      case 'waitelement':
+      case 'waitxpath': {
+        const [xpath, timeout] = requireArgs(cmd, 1, 2);
+        await requirePage(ctx, cmd).waitForXPath(xpath, parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, cmd));
+        return;
+      }
+
+      case 'getelementattribute': {
+        const [xpath, attribute] = requireArgs(cmd, 2);
+        runtime.locals.elementAttribute = await requirePage(ctx, cmd).getElementAttribute(xpath, attribute);
+        ctx.log(`elementAttribute=${runtime.locals.elementAttribute}`);
+        return;
+      }
+
+      case 'getelementtext': {
+        const [xpath] = requireArgs(cmd, 1);
+        runtime.locals.elementText = await requirePage(ctx, cmd).getElementText(xpath);
+        ctx.log(`elementText=${runtime.locals.elementText}`);
+        return;
+      }
+
+      case 'countelement': {
+        const [xpath] = requireArgs(cmd, 1);
+        runtime.locals.elementCount = await requirePage(ctx, cmd).countElement(xpath);
+        ctx.log(`elementCount=${runtime.locals.elementCount}`);
+        return;
+      }
+
+      case 'click': {
+        const [xpath] = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).clickXPath(xpath);
+        return;
+      }
+
+      case 'type':
+      case 'typetext': {
+        const [xpath, ...textParts] = requireArgs(cmd, 2);
+        await requirePage(ctx, cmd).typeTextXPath(xpath, textParts.join(' '));
+        return;
+      }
+
+      case 'pastetext': {
+        const [xpath, ...textParts] = requireArgs(cmd, 2);
+        await requirePage(ctx, cmd).pasteTextXPath(xpath, textParts.join(' '));
+        return;
+      }
+
+      case 'movemouse': {
+        const [xpath] = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).moveMouseXPath(xpath);
+        return;
+      }
+
+      case 'scroll': {
+        const [px] = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).scroll(parseNumber(px, cmd));
+        return;
+      }
+
+      case 'executejs':
+      case 'js': {
+        const [script] = requireArgs(cmd, 1);
+        runtime.locals.jsResult = toFlowValue(await requirePage(ctx, cmd).executeJs(script));
+        return;
+      }
+
+      case 'fileupload': {
+        const [filePath, xpath] = requireArgs(cmd, 2);
+        await requirePage(ctx, cmd).fileUpload(filePath, xpath);
+        return;
+      }
+
+      case 'httprequest': {
+        await executeHttpRequest(cmd, runtime);
+        return;
+      }
+
+      case 'httpdownload': {
+        await executeHttpDownload(cmd, runtime);
+        ctx.log(`downloadPath=${runtime.locals.downloadPath} downloadBytes=${runtime.locals.downloadBytes}`);
+        return;
+      }
+
+      case 'filewritealltext': {
+        const [filePath, ...textParts] = requireArgs(cmd, 2);
+        const outputPath = resolve(filePath);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, textParts.join(' '), 'utf8');
+        return;
+      }
+
+      case 'writeexcel': {
+        const [filePath, columnName, rowIndex, ...textParts] = requireArgs(cmd, 4);
+        writeExcelCell(filePath, columnName, rowIndex, textParts.join(' '), cmd);
+        return;
+      }
+
+      case 'delay':
+      case 'sleep': {
+        const [min, max] = requireArgs(cmd, 1, 2);
+        const minMs = parseNumber(min, cmd);
+        const maxMs = max === undefined ? minMs : parseNumber(max, cmd);
+        if (maxMs < minMs) throw lineError(cmd, `delay max (${maxMs}) must be >= min (${minMs}).`);
+        const ms = maxMs === minMs ? minMs : minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
+        if (maxMs > minMs) ctx.log(`sleep ${ms}ms (random ${minMs}-${maxMs})`);
+        await ctx.sleep(ms);
+        return;
+      }
+
+      case 'log': {
+        requireArgs(cmd, 1);
+        const interpolated = await interpolateCommand(ctx, cmd, runtime);
+        ctx.log(interpolated.args.join(' '));
+        return;
+      }
+
+      case 'info': {
+        requireArgs(cmd, 0);
+        const info = await requirePage(ctx, cmd).info();
+        ctx.log(`${info.title} ${info.url}`);
+        return;
+      }
+
+      case 'help': {
+        ctx.log('Available commands:');
+        ctx.log(COMMAND_LIST);
+        ctx.log(RDELAY_DESC);
+        ctx.log('Available functions:');
+        ctx.log(FUNCTION_LIST);
+        return;
+      }
+
+      default:
+        throw lineError(cmd, `unknown command "${cmd.command}". Available commands:\n${COMMAND_LIST}`);
     }
+  };
 
-    case 'closetab': {
-      requireArgs(item, 0);
-      await requirePage(ctx, item).closeTab();
-      return;
-    }
+  await runCmd();
 
-    case 'activetab': {
-      const [target] = requireArgs(item, 1);
-      await requirePage(ctx, item).activeTab(target);
-      return;
-    }
-
-    case 'backnav': {
-      const [timeout] = requireArgs(item, 0, 1);
-      await requirePage(ctx, item).backNav(parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, item));
-      return;
-    }
-
-    case 'reloadnav': {
-      requireArgs(item, 0);
-      await requirePage(ctx, item).reloadNav();
-      return;
-    }
-
-    case 'geturl': {
-      requireArgs(item, 0);
-      runtime.locals.pageUrl = await requirePage(ctx, item).getUrl();
-      return;
-    }
-
-    case 'waiturlchange': {
-      const [url, timeout] = requireArgs(item, 1, 2);
-      runtime.locals.pageUrl = await requirePage(ctx, item).waitUrlChange(url, parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, item));
-      ctx.log(`pageUrl=${runtime.locals.pageUrl}`);
-      return;
-    }
-
-    case 'waitload': {
-      const [settleMs] = requireArgs(item, 0, 1);
-      const settle = settleMs === undefined ? 2000 : parseNumber(settleMs, item);
-      if (settle > 0) await ctx.sleep(settle);
-      await requirePage(ctx, item).waitForLoad();
-      return;
-    }
-
-    case 'waitelement':
-    case 'waitxpath': {
-      const [xpath, timeout] = requireArgs(item, 1, 2);
-      await requirePage(ctx, item).waitForXPath(xpath, parseOptionalNumber(timeout, DEFAULT_WAIT_TIMEOUT_MS, item));
-      return;
-    }
-
-    case 'getelementattribute': {
-      const [xpath, attribute] = requireArgs(item, 2);
-      runtime.locals.elementAttribute = await requirePage(ctx, item).getElementAttribute(xpath, attribute);
-      ctx.log(`elementAttribute=${runtime.locals.elementAttribute}`);
-      return;
-    }
-
-    case 'getelementtext': {
-      const [xpath] = requireArgs(item, 1);
-      runtime.locals.elementText = await requirePage(ctx, item).getElementText(xpath);
-      ctx.log(`elementText=${runtime.locals.elementText}`);
-      return;
-    }
-
-    case 'countelement': {
-      const [xpath] = requireArgs(item, 1);
-      runtime.locals.elementCount = await requirePage(ctx, item).countElement(xpath);
-      ctx.log(`elementCount=${runtime.locals.elementCount}`);
-      return;
-    }
-
-    case 'click': {
-      const [xpath] = requireArgs(item, 1);
-      await requirePage(ctx, item).clickXPath(xpath);
-      return;
-    }
-
-    case 'type':
-    case 'typetext': {
-      const [xpath, ...textParts] = requireArgs(item, 2);
-      await requirePage(ctx, item).typeTextXPath(xpath, textParts.join(' '));
-      return;
-    }
-
-    case 'pastetext': {
-      const [xpath, ...textParts] = requireArgs(item, 2);
-      await requirePage(ctx, item).pasteTextXPath(xpath, textParts.join(' '));
-      return;
-    }
-
-    case 'movemouse': {
-      const [xpath] = requireArgs(item, 1);
-      await requirePage(ctx, item).moveMouseXPath(xpath);
-      return;
-    }
-
-    case 'scroll': {
-      const [px] = requireArgs(item, 1);
-      await requirePage(ctx, item).scroll(parseNumber(px, item));
-      return;
-    }
-
-    case 'executejs':
-    case 'js': {
-      const [script] = requireArgs(item, 1);
-      runtime.locals.jsResult = toFlowValue(await requirePage(ctx, item).executeJs(script));
-      return;
-    }
-
-    case 'fileupload': {
-      const [filePath, xpath] = requireArgs(item, 2);
-      await requirePage(ctx, item).fileUpload(filePath, xpath);
-      return;
-    }
-
-    case 'httprequest': {
-      await executeHttpRequest(item, runtime);
-      return;
-    }
-
-    case 'httpdownload': {
-      await executeHttpDownload(item, runtime);
-      ctx.log(`downloadPath=${runtime.locals.downloadPath} downloadBytes=${runtime.locals.downloadBytes}`);
-      return;
-    }
-
-    case 'filewritealltext': {
-      const [filePath, ...textParts] = requireArgs(item, 2);
-      const outputPath = resolve(filePath);
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, textParts.join(' '), 'utf8');
-      return;
-    }
-
-    case 'writeexcel': {
-      const [filePath, columnName, rowIndex, ...textParts] = requireArgs(item, 4);
-      writeExcelCell(filePath, columnName, rowIndex, textParts.join(' '), item);
-      return;
-    }
-
-    case 'delay':
-    case 'sleep': {
-      const [min, max] = requireArgs(item, 1, 2);
-      const minMs = parseNumber(min, item);
-      const maxMs = max === undefined ? minMs : parseNumber(max, item);
-      if (maxMs < minMs) throw lineError(item, `delay max (${maxMs}) must be >= min (${minMs}).`);
-      const ms = maxMs === minMs ? minMs : minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
-      if (maxMs > minMs) ctx.log(`sleep ${ms}ms (random ${minMs}-${maxMs})`);
-      await ctx.sleep(ms);
-      return;
-    }
-
-    case 'log': {
-      requireArgs(item, 1);
-      const interpolated = await interpolateCommand(ctx, item, runtime);
-      ctx.log(interpolated.args.join(' '));
-      return;
-    }
-
-    case 'info': {
-      requireArgs(item, 0);
-      const info = await requirePage(ctx, item).info();
-      ctx.log(`${info.title} ${info.url}`);
-      return;
-    }
-
-    case 'help': {
-      ctx.log('Available commands:');
-      ctx.log(COMMAND_LIST);
-      ctx.log('Available functions:');
-      ctx.log(FUNCTION_LIST);
-      return;
-    }
-
-    default:
-      throw lineError(item, `unknown command "${item.command}". Available commands:\n${COMMAND_LIST}`);
+  // Apply optional rDelay after command execution
+  if (hasRDelay) {
+    const min = Math.min(rDelayMin, rDelayMax);
+    const max = Math.max(rDelayMin, rDelayMax);
+    const ms = min + Math.floor(Math.random() * (max - min + 1));
+    ctx.log(`rDelay ${ms}ms`);
+    await ctx.sleep(ms);
   }
 }
 
@@ -501,6 +539,12 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       if (name === 'splittext') {
         if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
         return String(args[0] ?? '').split(String(args[1] ?? ''));
+      }
+      if (name === 'contains') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        const left = String(args[0] ?? '');
+        const right = String(args[1] ?? '');
+        return left === '' ? right === '' : left.includes(right);
       }
       if (name === 'readjson') {
         if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);

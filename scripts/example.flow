@@ -8,14 +8,17 @@ inputs {
   mode: comboBox ["alpha", "beta", "gamma"] = "beta"
 }
 
-before()
+before() {
+	respone = httpRequest("http://127.0.0.1:8089/v1/events/profile-init", "POST", '{"Content-Type": "application/json"}', '{"action_name": "change_ig_name", "profileName": "test name","proxy": "null"}')
+}
 
 running() {
   log("[main] all inputs available after profile launch")
   log("auto=${autoValue} text=${textValue} number=${numberValue} file=${filePath} folder=${folderPath} enabled=${enabled} mode=${mode}")
-  nav("https://example.com/?mode=${mode}&enabled=${enabled}&value=${autoValue}")
+  nav("https://instagram.com/")
   waitLoad()
   info()
+  sleep(10000)
 }
 
 after()

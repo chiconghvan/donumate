@@ -75,13 +75,13 @@ Runner flow for `.flow`:
 1. Load `.flow` and parse input definitions/blocks.
 2. Collect inputs in one terminal UI frame (`src/ui/run-flow-input-form.ts`).
 3. List/select profile.
-4. Execute `before run profile` block without page/BiDi access.
+4. Execute `before()` block without page/BiDi access.
 5. Launch profile with `GET /v1/profiles/{id}/run`.
 6. Wait until profile is running.
 7. Connect WebDriver BiDi at `ws://127.0.0.1:{remote_debugging_port}/session` unless API supplies `ws_url`.
 8. Initialize `PageAutomation`.
-9. Execute TS script or `.flow` `run profile` block.
-10. Close BiDi, kill profile, execute `.flow` `after kill profile` block.
+9. Execute TS script or `.flow` `running()` block.
+10. Close BiDi, kill profile, execute `.flow` `after()` block.
 
 ### BiDi/page automation
 
@@ -112,7 +112,7 @@ export default async function(ctx: WorkflowContext) {
 }
 ```
 
-`WorkflowContext` includes `profile`, `run`, `page`, `bidi`, `log`, `sleep`, `inputs`, and stringified `args`.
+`WorkflowContext` includes `profile`, `run`, `page`, `bidi`, `log`, `sleep`, `inputs`, and stringified `args`. `inputs` is typed values; `args` is stringified input map.
 
 ### `.flow` scripts
 
@@ -125,18 +125,18 @@ inputs {
   enabled: checkbox = true
 }
 
-before run profile {
-  log "Before launch: ${mode}"
+before() {
+  log("Before launch: ${mode}")
 }
 
-run profile {
-  nav "${startUrl}"
-  waitLoad
-  info
+running() {
+  nav("${startUrl}")
+  waitLoad()
+  info()
 }
 
-after kill profile {
-  log "Browser killed"
+after() {
+  log("Browser killed")
 }
 ```
 
