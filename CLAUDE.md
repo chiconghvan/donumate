@@ -17,11 +17,27 @@ Prerequisites: Donut Browser running with REST API enabled at `http://127.0.0.1:
 ```bash
 pnpm install              # Install dependencies
 pnpm typecheck            # Type-check without emit
-pnpm build                # TypeScript compile to dist/
+pnpm build                # Build dev only (dist/)
+pnpm build:exe            # Build exe only (dist-exe/ + release/)
+pnpm build:all            # Typecheck + dev + exe
+pnpm build:clean          # Remove dist/, dist-exe/, release/
 pnpm start                # Run CLI via tsx, interactive script/profile selection
 pnpm start threads        # Run built-in Threads workflow
 pnpm start run --script ./scripts/example.flow --profile <id>
 ```
+
+Build script (`node build.mjs`) commands:
+
+```bash
+node build.mjs              # Typecheck + dev + exe (default)
+node build.mjs all          # Same as above
+node build.mjs dev          # Dev build only (dist/)
+node build.mjs exe          # Exe build only (dist-exe/ + release/)
+node build.mjs typecheck    # Type-check only
+node build.mjs clean        # Remove all build output
+```
+
+Exe build uses esbuild with ink/react stub plugins, then packages with `@yao-pkg/pkg` to `release/donumate-win-x64.exe` (~66 MB). Exe uses readline instead of ink for UI (no interactive prompts, pass all inputs via CLI flags).
 
 `--no-update-check` skips GitHub release check.
 
@@ -65,6 +81,7 @@ Common options:
 - `src/cli.ts` defines root, `run`, and `threads` commands.
 - `src/config/load-config.ts` merges CLI flags with `.env` values and validates via `zod`.
 - `src/runtime/script-loader.ts` resolves script specs in this order: built-in name (`threads`), absolute path, path relative to `cwd`. It loads TS scripts by dynamic import and `.flow` scripts via the DSL parser.
+- `src/runtime/dsl/runtime-spec.ts` is shared source of truth for command/function metadata. If you add or change command/function names, aliases, arg counts, page-only rules, or side effects, update `runtime-spec.ts` and keep executor/checker/catalog in sync.
 
 ### Donut profile lifecycle
 
@@ -143,6 +160,12 @@ after() {
 ```
 
 Supported input types: `input` (auto text/number), `text`, `number`, `file`, `folder`, `checkbox`, `comboBox`, `inputExcelFile`. Inputs are interpolated as `${name}` inside command args. Full user docs live in `docs/flow-scripting.md`.
+
+### Checker
+
+- `donumate check --script <file.flow>` runs static checker only.
+- Checker must use shared runtime DSL spec, not hard-coded command/function lists.
+- If runtime command metadata changes, update `src/runtime/dsl/runtime-spec.ts` and executor together.
 
 Legacy flat `.flow` scripts without block headers are still treated as main logic.
 

@@ -10,11 +10,12 @@ export type FlowInputFormResult = {
   state: { values: Record<string, string>; cursor: number };
 };
 
-const SCRIPT_SETTING_NAMES = new Set(['hardless', 'threads', 'inputExcelFile', 'windowWidth', 'windowHeight']);
+const SCRIPT_SETTING_NAMES = new Set(['hardless', 'threads', 'inputExcelFile', 'mapProfileName', 'windowWidth', 'windowHeight']);
 const SCRIPT_SETTING_LABELS: Record<string, string> = {
   hardless: 'Không cửa sổ (hardless)',
   threads: 'Số luồng cùng lúc (threads)',
   inputExcelFile: 'File excel đầu vào (inputExcelFile)',
+  mapProfileName: 'Map profile name (mapProfileName)',
   windowWidth: 'Rộng window (windowWidth)',
   windowHeight: 'Cao window (windowHeight)',
 };

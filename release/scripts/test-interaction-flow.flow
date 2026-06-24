@@ -1,0 +1,88 @@
+inputs {
+  fixtureUrl: input = "file:///E:/Code/donumate/test/index.html"
+  sampleText: text = "abc123 automation"
+  messageText: text = "hello from flow pasteText"
+  outputPath: input = "test\flow-test-output.txt"
+}
+
+before() {
+  log("[before] prepare interaction fixture test")
+  fileWriteAllText("${outputPath}", "flow test started")
+
+  marker = fileReadAllText(outputPath)
+
+  outExists = fileExist(outputPath)
+  testFolderExists = folderExist("test")
+  parts = splitText("alpha,beta,gamma", ",")
+  firstPart = parts[0]
+  randomValue = randomNum(1, 3)
+  log("file=${outExists} folder=${testFolderExists} first=${firstPart} random=${randomValue}")
+}
+
+running() {
+  log("[running] open fixture ${fixtureUrl}")
+  goto("${fixtureUrl}")
+  waitLoad()
+  info()
+  currentUrl = getUrl()
+
+  waitElement("//h1[contains(., 'Donumate Interaction Test')]", 10000)
+  waitElement("//input[@id='text-input']", 10000)
+  waitElement("//textarea[@id='message-input']", 10000)
+  interactiveCount = countElement("//input | //textarea | //select | //button")
+  statusText = getElementText("//p[@id='status']")
+  primaryAction = getElementAttribute("//button[@id='primary-button']", "data-action")
+
+  clearResult = js("window.__interactionTest.clear(); true")
+  click("//input[@id='text-input']")
+  typeText("//input[@id='text-input']", "${sampleText}")
+  pasteText("//textarea[@id='message-input']", "${messageText}")
+  click("//input[@id='agree-checkbox']")
+  fileUpload("${outputPath}", "//input[@id='file-input']")
+  selectedMode = js("const el = document.querySelector('#mode-select'); el.value = 'debug'; el.dispatchEvent(new Event('change', { bubbles: true })); return el.value")
+  moveMouse("//div[@id='mouse-box']")
+  click("//div[@id='mouse-box']")
+  scroll(300)
+  click("//button[@id='primary-button']")
+
+  if hasElement("//button[@id='export-log']")
+    log("export button exists")
+  else
+    log("export button missing")
+
+  if existsXPath("//label[@for='message-input']")
+    log("Label message input to paste text exists")
+
+  for i = 0; i < 4; i = i + 1
+    if i == 1
+      nextLoop
+    log("for-loop=${i}")
+
+  n = 0
+  while n < 5
+    n = n + 1
+    if n == 3
+      exitLoop
+    log("while-loop=${n}")
+
+  eventCount = js("return window.__interactionTest.count()")
+  if eventCount > 0
+    log("event count ok ${eventCount}")
+  else
+    log("event count is zero")
+
+  requiredEventsFound = js("return window.__interactionTest.has('click') && window.__interactionTest.has('keydown') && window.__interactionTest.has('input')")
+  if requiredEventsFound == true
+    log("required events found")
+  else
+    log("required events missing")
+
+  exportButtonText = getElementText("//button[@id='export-log']")
+  click("//button[@id='export-log']")
+  delay(300)
+}
+
+after() {
+  fileWriteAllText("${outputPath}", "flow test finished")
+  log("[after] interaction fixture test done")
+}

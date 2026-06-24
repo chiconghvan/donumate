@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.2
+
+### New features
+
+- **Script builder web app** - added a browser-based flow script editor with import/export support and runtime validation.
+- **Flow runtime expansion** - parser, executor, and command catalog were expanded for richer `.flow` scripting and control flow.
+- **Gscript workflow support** - added the alternate GScript execution path and headless flow script creation flow.
+
+### Changes
+
+- CLI script discovery now covers the updated `.ts`, `.flow.json`, and `.flow` workflow formats.
+- Release packaging now includes the script builder web assets and the Windows x64 release layout.
+- Docs and release metadata were refreshed to match the new scripting and builder workflow.
+
+## 0.0.8
+
+### New features
+
+- **Excel profile mapping** — tick `mapProfileName` in Script Settings to auto-map Excel rows by profile name in column A. Use `inputExcelFile[B]`, `inputExcelFile[C]`, etc. to read data from the matched row. Script stops with error if profile name not found in column A.
+
 ## 0.0.7
 
 ### New features

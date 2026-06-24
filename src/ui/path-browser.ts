@@ -3,8 +3,37 @@ import { dirname, join, parse, resolve } from 'path';
 import { runListPicker, type ListPickerOption } from './list-picker.js';
 import { runTextInputPrompt } from './text-input-prompt.js';
 
+/** List available Windows drives (C:, D:, etc.) at root level */
+async function listDrives(): Promise<string[]> {
+  const drives: string[] = [];
+  for (let ch = 65; ch <= 90; ch++) {
+    const letter = String.fromCharCode(ch);
+    try {
+      await readdir(`${letter}:\\`);
+      drives.push(`${letter}:\\`);
+    } catch {
+      // drive not available
+    }
+  }
+  return drives;
+}
+
 export async function browsePath(mode: 'file' | 'folder', initialPath: string): Promise<string> {
-  let cwd = resolve(process.cwd(), initialPath || '.');
+  // If initialPath points to an existing file, start browsing its parent directory
+  let cwd: string;
+  if (initialPath) {
+    cwd = resolve(process.cwd(), initialPath);
+    try {
+      const stat = await import('fs/promises').then((m) => m.stat(cwd));
+      if (stat.isFile()) cwd = dirname(cwd);
+    } catch {
+      // path invalid, start from resolved parent
+      cwd = dirname(resolve(process.cwd(), initialPath));
+    }
+  } else {
+    cwd = process.cwd();
+  }
+
   while (true) {
     let items: { name: string; isDirectory: boolean }[] = [];
     try {
@@ -17,6 +46,8 @@ export async function browsePath(mode: 'file' | 'folder', initialPath: string): 
     }
 
     const options: ListPickerOption<string>[] = [];
+    const parsed = parse(cwd);
+    const root = parsed.root;
 
     if (mode === 'folder') {
       options.push({ value: '__choose__', label: `Select current folder (${cwd})` });
@@ -24,8 +55,17 @@ export async function browsePath(mode: 'file' | 'folder', initialPath: string): 
 
     options.push({ value: '__type__', label: 'Type/paste path manually' });
 
-    const root = parse(cwd).root;
-    if (cwd !== root) {
+    // At filesystem root offer to switch drives
+    if (cwd === root || cwd === root.slice(0, -1)) {
+      const drives = await listDrives();
+      for (const drive of drives) {
+        if (drive !== root) {
+          options.push({ value: '__drive__' + drive, label: `[Drive] ${drive}` });
+        }
+      }
+    }
+
+    if (cwd !== root && cwd !== root.slice(0, -1)) {
       options.push({ value: '__parent__', label: '.. (Parent Directory)' });
     }
 
@@ -55,6 +95,12 @@ export async function browsePath(mode: 'file' | 'folder', initialPath: string): 
       });
       if (manualPath === undefined) continue;
       return resolve(cwd, manualPath);
+    }
+
+    // Switch to different drive
+    if (typeof choice === 'string' && choice.startsWith('__drive__')) {
+      cwd = choice.slice('__drive__'.length);
+      continue;
     }
 
     if (choice === '__parent__') {

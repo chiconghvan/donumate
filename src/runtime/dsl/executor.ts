@@ -1,11 +1,12 @@
 import { request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
-import { mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { appendFile, mkdir, readFile, readdir, stat, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
 import type { WorkflowContext, WorkflowScript } from '../types.js';
 import { COMMAND_LIST, FUNCTION_LIST, PAGE_COMMANDS, PAGE_FUNCTIONS, RDELAY_DESC } from './catalog.js';
+import { getFlowCommandSpec, getFlowFunctionSpec, normalizeFlowCommandName } from './runtime-spec.js';
 import { parseExpression, parseFlowProgram } from './parser.js';
 import type { FlowBinaryOperator, FlowBlockName, FlowExpression, FlowInputValue, FlowProgram, FlowStatement, FlowValue } from './types.js';
 
@@ -27,7 +28,7 @@ type FlowRuntime = {
   excelInputs: Set<string>;
 };
 
-type LoopSignal = 'next' | 'exit';
+type LoopSignal = 'next' | 'exit' | 'stop';
 
 export async function loadFlowProgram(filePath: string): Promise<FlowProgram> {
   const source = await readFile(filePath, 'utf8');
@@ -44,6 +45,7 @@ export async function executeFlowBlock(ctx: FlowExecutionContext, program: FlowP
   validateStatementsForBlock(statements, block);
   const excelInputs = new Set(program.inputs.filter((input) => input.type === 'inputExcelFile').map((input) => input.name.toLowerCase()));
   const signal = await executeFlowStatements(ctx, statements, { locals: {}, loopIndexStack: [], excelInputs });
+  if (signal === 'stop') return;
   if (signal) throw new AppError(`${signal === 'next' ? 'nextLoop' : 'exitLoop'} used outside a loop.`);
 }
 
@@ -52,7 +54,8 @@ async function executeFlowStatements(ctx: FlowExecutionContext, statements: Flow
     if (statement.type === 'command') {
       const interpolated = await interpolateCommand(ctx, statement, runtime);
       ctx.log(`flow:${statement.lineNumber}`, formatFlowCommand(interpolated));
-      await executeFlowCommand(ctx, interpolated, runtime);
+      const sig = await executeFlowCommand(ctx, interpolated, runtime);
+      if (sig) return sig;
       continue;
     }
 
@@ -66,8 +69,7 @@ async function executeFlowStatements(ctx: FlowExecutionContext, statements: Flow
 async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowStatement, runtime: FlowRuntime): Promise<LoopSignal | undefined> {
   switch (statement.type) {
     case 'command':
-      await executeFlowCommand(ctx, await interpolateCommand(ctx, statement, runtime), runtime);
-      return undefined;
+      return executeFlowCommand(ctx, await interpolateCommand(ctx, statement, runtime), runtime);
 
     case 'assignment':
       runtime.locals[statement.name] = await evaluateExpression(ctx, statement.value, runtime, statement);
@@ -101,6 +103,7 @@ async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowSt
         iterations += 1;
         if (signal === 'exit') return undefined;
         if (signal === 'next') continue;
+        if (signal === 'stop') return 'stop';
       }
       return undefined;
     }
@@ -118,6 +121,7 @@ async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowSt
           runtime.loopIndexStack.pop();
         }
         if (signal === 'exit') return undefined;
+        if (signal === 'stop') return 'stop';
         await executeFlowStatement(ctx, statement.update, runtime);
         iterations += 1;
         if (signal === 'next') continue;
@@ -127,7 +131,16 @@ async function executeFlowStatement(ctx: FlowExecutionContext, statement: FlowSt
   }
 }
 
-async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<void> {
+async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<LoopSignal | undefined> {
+  const commandName = normalizeFlowCommandName(item.command).toLowerCase();
+
+  // exit command — stop flow successfully
+  if (commandName === 'exit') {
+    const [message] = requireArgs(item, 0, 1);
+    if (message) ctx.log(message);
+    return 'stop';
+  }
+
   // Extract optional rDelay from args: rDelay or rDelay(min,max)
   let hasRDelay = false;
   let rDelayMin = RDELAY_MIN_MS;
@@ -302,6 +315,20 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
         return;
       }
 
+      case 'fileappendtext': {
+        const [filePath, ...textParts] = requireArgs(cmd, 2);
+        const outputPath = resolve(filePath);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await appendFile(outputPath, textParts.join(' '), 'utf8');
+        return;
+      }
+
+      case 'sendkey': {
+        const keys = requireArgs(cmd, 1);
+        await requirePage(ctx, cmd).sendKey(...keys);
+        return;
+      }
+
       case 'writeexcel': {
         const [filePath, columnName, rowIndex, ...textParts] = requireArgs(cmd, 4);
         writeExcelCell(filePath, columnName, rowIndex, textParts.join(' '), cmd);
@@ -344,7 +371,7 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
       }
 
       default:
-        throw lineError(cmd, `unknown command "${cmd.command}". Available commands:\n${COMMAND_LIST}`);
+      throw lineError(cmd, `unknown command "${cmd.command}". Available commands:\n${COMMAND_LIST}`);
     }
   };
 
@@ -358,6 +385,7 @@ async function executeFlowCommand(ctx: FlowExecutionContext, item: Extract<FlowS
     ctx.log(`rDelay ${ms}ms`);
     await ctx.sleep(ms);
   }
+  return undefined;
 }
 
 async function executeHttpRequest(item: Extract<FlowStatement, { type: 'command' }>, runtime: FlowRuntime): Promise<string> {
@@ -451,7 +479,10 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       return expression.value;
 
     case 'variable': {
-      if (expression.name === 'loopIndex') return runtime.loopIndexStack[runtime.loopIndexStack.length - 1] ?? -1;
+      if (expression.name === 'loopIndex') {
+        if (runtime.loopIndexStack.length > 0) return runtime.loopIndexStack[runtime.loopIndexStack.length - 1];
+        return runtime.locals[expression.name] ?? null;
+      }
       if (expression.name in runtime.locals) return runtime.locals[expression.name] ?? null;
       if (expression.name in ctx.inputs) return ctx.inputs[expression.name] ?? null;
       const available = [...Object.keys(ctx.inputs), ...Object.keys(runtime.locals), 'loopIndex'].join(', ');
@@ -518,7 +549,11 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       }
       if (name === 'httprequest') {
         if (args.length < 2 || args.length > 4) throw lineError(item, `${expression.name} expects 2-4 arguments.`);
-        return runHttpRequest(String(args[0] ?? ''), String(args[1] ?? ''), args[2] === undefined ? undefined : String(args[2]), args[3] === undefined ? undefined : String(args[3]), item, runtime);
+        const url2 = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        const method2 = String(args[1] ?? '');
+        const headers2 = args[2] === undefined ? undefined : String(args[2]);
+        const body2 = args[3] === undefined ? undefined : String(args[3]);
+        return runHttpRequest(url2, method2, headers2, body2, item, runtime);
       }
       if (name === 'splittext') {
         if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
@@ -543,19 +578,38 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
       }
       if (name === 'fileexist') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
-        return pathExists(String(args[0] ?? ''), 'file');
+        return pathExists(await interpolate(ctx, String(args[0] ?? ''), runtime, item), 'file');
       }
       if (name === 'folderexist') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
-        return pathExists(String(args[0] ?? ''), 'folder');
+        return pathExists(await interpolate(ctx, String(args[0] ?? ''), runtime, item), 'folder');
+      }
+      if (name === 'getfiles') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        const folderPath = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        const dirents = await readdir(resolve(folderPath), { withFileTypes: true });
+        return dirents.filter((d) => d.isFile()).map((d) => resolve(folderPath, d.name));
+      }
+      if (name === 'arraylength') {
+        if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
+        const val = args[0];
+        if (!Array.isArray(val)) throw lineError(item, `arrayLength expects an array, got "${typeof val}".`);
+        return val.length;
       }
       if (name === 'readexcel') {
         if (args.length !== 3) throw lineError(item, `${expression.name} expects 3 arguments.`);
-        return readExcelCell(String(args[0] ?? ''), args[1], args[2], item);
+        const filePath = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        return readExcelCell(filePath, args[1], args[2], item);
+      }
+      if (name === 'findrow') {
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        const filePath = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        return findExcelRow(filePath, String(args[1] ?? ''), item);
       }
       if (name === 'filereadalltext') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
-        return await readFile(resolve(String(args[0] ?? '')), 'utf8');
+        const filePath2 = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        return await readFile(resolve(filePath2), 'utf8');
       }
       if (name === '2fa') {
         if (args.length !== 1) throw lineError(item, `${expression.name} expects 1 argument.`);
@@ -571,15 +625,39 @@ async function evaluateExpression(ctx: FlowExecutionContext, expression: FlowExp
         return body.token;
       }
       if (runtime.excelInputs.has(name)) {
-        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments.`);
+        if (args.length === 1 && isTruthy(ctx.inputs.mapProfileName)) {
+          const col = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+          return readExcelInputCellByProfile(ctx, col.toUpperCase(), expression.name, item);
+        }
+        if (args.length !== 2) throw lineError(item, `${expression.name} expects 2 arguments, or 1 argument when mapProfileName is enabled.`);
         const inputName = Object.keys(ctx.inputs).find((key) => key.toLowerCase() === name) ?? expression.name;
-        return readExcelCell(String(ctx.inputs[inputName] ?? ''), args[0], args[1], item);
+        const fpath = await interpolate(ctx, String(ctx.inputs[inputName] ?? ''), runtime, item);
+        const col = await interpolate(ctx, String(args[0] ?? ''), runtime, item);
+        const row = await interpolate(ctx, String(args[1] ?? ''), runtime, item);
+        return readExcelCell(fpath, col, row, item);
       }
       throw lineError(item, `unknown function "${expression.name}". Available functions:\n${FUNCTION_LIST}`);
     }
 
     case 'index': {
       const object = await evaluateExpression(ctx, expression.object, runtime, item);
+
+      // Excel input profile-mapped shorthand: inputExcelFile[B] or inputExcelFile["B"]
+      if (expression.object.type === 'variable' && runtime.excelInputs.has(expression.object.name.toLowerCase())) {
+        if (isTruthy(ctx.inputs.mapProfileName)) {
+          let colLetter: string;
+          if (expression.index.type === 'variable' && /^[A-Za-z]+$/.test(expression.index.name)) {
+            colLetter = expression.index.name.toUpperCase();
+          } else if (expression.index.type === 'literal' && typeof expression.index.value === 'string' && /^[A-Za-z]+$/.test(expression.index.value)) {
+            colLetter = expression.index.value.toUpperCase();
+          } else {
+            const idx = await evaluateExpression(ctx, expression.index, runtime, item);
+            colLetter = String(idx).toUpperCase();
+          }
+          return readExcelInputCellByProfile(ctx, colLetter, expression.object.name, item);
+        }
+      }
+
       const indexValue = await evaluateExpression(ctx, expression.index, runtime, item);
       if (!Array.isArray(object)) throw lineError(item, `cannot index non-array value "${String(object)}".`);
       const index = toNumber(indexValue, item);
@@ -723,6 +801,51 @@ function readExcelCell(filePath: string, columnName: FlowValue, rowIndex: FlowVa
   return toFlowValue(cell?.v);
 }
 
+function findExcelRow(filePath: string, searchText: string, item: { lineNumber: number; raw: string }): number | null {
+  const workbook = XLSX.readFile(resolve(filePath));
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return null;
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet?.['!ref']) return null;
+
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ c, r })];
+      if (String(cell?.v ?? '') === searchText) return r;
+    }
+  }
+  return null;
+}
+
+function findExcelRowByColumnA(filePath: string, profileName: string, item: { lineNumber: number; raw: string }): number {
+  const workbook = XLSX.readFile(resolve(filePath));
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw lineError(item, `profile name "${profileName}" not found in column A of inputExcelFile: sheet is empty.`);
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet?.['!ref']) throw lineError(item, `profile name "${profileName}" not found in column A of inputExcelFile: sheet is empty.`);
+
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const cell = sheet[XLSX.utils.encode_cell({ c: 0, r })];
+    if (String(cell?.v ?? '') === profileName) return r;
+  }
+  throw lineError(item, `profile name "${profileName}" not found in column A of inputExcelFile: ${filePath}`);
+}
+
+function resolveExcelInputFilePath(ctx: FlowExecutionContext, inputName: string): string {
+  const key = Object.keys(ctx.inputs).find((k) => k.toLowerCase() === inputName) ?? inputName;
+  return String(ctx.inputs[key] ?? '');
+}
+
+function readExcelInputCellByProfile(ctx: FlowExecutionContext, colLetter: string, inputName: string, item: { lineNumber: number; raw: string }): FlowValue {
+  const fpath = resolveExcelInputFilePath(ctx, inputName);
+  const profileName = String(ctx.inputs.profileName ?? '');
+  if (!profileName) throw lineError(item, 'profileName is empty; cannot map profile name to Excel row.');
+  const row = findExcelRowByColumnA(fpath, profileName, item);
+  return readExcelCell(fpath, colLetter, row, item);
+}
+
 function writeExcelCell(filePath: string, columnName: string, rowIndexText: string, value: string, item: { lineNumber: number; raw: string }): void {
   const outputPath = resolve(filePath);
   let workbook: XLSX.WorkBook;
@@ -750,9 +873,19 @@ function writeExcelCell(filePath: string, columnName: string, rowIndexText: stri
 function findExcelColumn(sheet: XLSX.WorkSheet, columnName: string, item: { lineNumber: number; raw: string }): number {
   if (!sheet['!ref']) throw lineError(item, 'Excel sheet is empty.');
   const range = XLSX.utils.decode_range(sheet['!ref']);
+  // First try matching header name (row 0)
   for (let column = range.s.c; column <= range.e.c; column += 1) {
     const cell = sheet[XLSX.utils.encode_cell({ c: column, r: 0 })];
     if (String(cell?.v ?? '') === columnName) return column;
+  }
+  // Fallback: treat as column letter (A=0, B=1, ..., Z=25, AA=26, ...)
+  const colLetter = columnName.toUpperCase();
+  if (/^[A-Z]+$/.test(colLetter)) {
+    let colIndex = 0;
+    for (let i = 0; i < colLetter.length; i++) {
+      colIndex = colIndex * 26 + (colLetter.charCodeAt(i) - 64);
+    }
+    return colIndex - 1;
   }
   throw lineError(item, `Excel column not found: ${columnName}`);
 }

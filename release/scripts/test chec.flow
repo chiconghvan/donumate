@@ -1,0 +1,14 @@
+inputs {
+  excel: file = ""
+}
+
+before() {
+  text = readExcel('${excel}',A,2)
+}
+
+running() {
+
+}
+
+after() {
+}

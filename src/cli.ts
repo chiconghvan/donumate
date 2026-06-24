@@ -2,9 +2,12 @@
 import { Command } from 'commander';
 import { loadConfig } from './config/load-config.js';
 import { createFlowScript } from './runtime/create-flow-script.js';
+import { checkFlowSource, formatFlowDiagnostic } from './runtime/dsl/checker.js';
 import { clearScreen, runWorkflow, type RunnerOptions } from './runtime/runner.js';
+import { runGscriptWorkflow } from './runtime/gscript/runner.js';
 import { selectScript } from './runtime/script-loader.js';
-import { runListPicker } from './ui/list-picker.js';
+import { launchScriptBuilder } from './script-builder/launch.js';
+import { getUi } from './ui/ui-provider.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
 import { CURRENT_VERSION, maybeRunUpdateCheck } from './update/index.js';
@@ -24,6 +27,7 @@ type CliOptions = {
   connectTimeout?: string;
   commandTimeout?: string;
   script?: string;
+  scriptBuilder?: boolean | string;
   input?: string[];
   updateCheck?: boolean;
 };
@@ -43,9 +47,11 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
 }
 
 type RootAction = 'run-scripts' | 'create-flow' | 'exit';
+type CheckOptions = CliOptions & { script?: string };
 
 async function selectRootAction(): Promise<RootAction | undefined> {
-  return runListPicker<RootAction>({
+  const ui = await getUi();
+  return ui.runListPicker<RootAction>({
     title: 'Donumate',
     options: [
       { label: 'Run Scripts', value: 'run-scripts' },
@@ -65,7 +71,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--headless', 'Launch profile headless')
     .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
-    .option('--input <key=value>', 'Set .flow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
+    .option('--script-builder [path]', 'Launch visual .flow script builder, optionally opening a script')
+    .option('--input <key=value>', 'Set workflow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
     .option('--no-update-check', 'Skip checking GitHub releases for updates');
 }
 
@@ -151,6 +158,11 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
 
 async function handleAction(options: CliOptions, scriptSpec?: string): Promise<void> {
   try {
+    if (options.scriptBuilder !== undefined) {
+      const initialPath = typeof options.scriptBuilder === 'string' ? options.scriptBuilder : options.script ?? scriptSpec;
+      await launchScriptBuilder({ initialPath, signal: globalAbort.signal });
+      return;
+    }
     await runWithOptions(options, scriptSpec);
   } catch (error) {
     if (isCliBackError(error)) return;
@@ -162,6 +174,60 @@ async function handleAction(options: CliOptions, scriptSpec?: string): Promise<v
     console.error('elifecycle command failed with exit code 1');
     process.exitCode = 1;
   }
+}
+
+async function handleGscriptAction(options: CliOptions): Promise<void> {
+  try {
+    if (!options.script) throw new AppError('--script is required.');
+    const config = loadConfig({
+      api: options.api,
+      token: options.token,
+      profile: options.profile,
+      headless: options.headless,
+      connectTimeout: options.connectTimeout,
+      commandTimeout: options.commandTimeout,
+    });
+    await maybeRunUpdateCheck({ currentVersion: CURRENT_VERSION, updateCheck: options.updateCheck });
+    await runGscriptWorkflow({
+      apiBaseUrl: config.apiBaseUrl,
+      apiToken: config.apiToken,
+      profileId: config.profileId,
+      headless: config.headless,
+      bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
+      bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
+      scriptSpec: options.script,
+      scriptInputs: parseInputOverrides(options.input),
+      signal: globalAbort.signal,
+    });
+  } catch (error) {
+    if (isCliBackError(error)) return;
+    if (globalAbort.signal.aborted) {
+      process.exitCode = 130;
+      return;
+    }
+    console.error(formatError(error));
+    console.error('elifecycle command failed with exit code 1');
+    process.exitCode = 1;
+  }
+}
+
+async function handleCheckAction(options: CheckOptions): Promise<void> {
+  const script = options.script;
+  if (!script) throw new AppError('--script is required.');
+  const fs = await import('fs/promises');
+  const source = await fs.readFile(script, 'utf8');
+  const result = checkFlowSource(source, script);
+  for (const diagnostic of result.diagnostics) {
+    console.error(formatFlowDiagnostic(diagnostic, source));
+  }
+  const errorCount = result.diagnostics.filter((item) => item.severity === 'error').length;
+  const warningCount = result.diagnostics.filter((item) => item.severity === 'warning').length;
+  if (errorCount === 0 && warningCount === 0) {
+    console.log('Check complete. No failures found.');
+  } else {
+    console.log(`Check complete. ${errorCount} error(s), ${warningCount} warning(s).`);
+  }
+  process.exitCode = errorCount > 0 ? 1 : 0;
 }
 
 // Interactive: choose script, then profile.
@@ -181,5 +247,18 @@ addCommonOptions(
     .command('threads')
     .description('Built-in Threads workflow')
 ).action((options) => handleAction(options, 'threads'));
+
+addCommonOptions(
+  program
+    .command('gscript')
+    .description('Run a GPM Automate .gscript workflow')
+    .requiredOption('--script <path>', 'GPM Automate .gscript path')
+).action((options) => handleGscriptAction(options));
+
+program
+  .command('check')
+  .description('Check a .flow script without launching browser')
+  .requiredOption('--script <path>', 'Flow script path')
+  .action((options) => handleCheckAction(options));
 
 program.parseAsync();

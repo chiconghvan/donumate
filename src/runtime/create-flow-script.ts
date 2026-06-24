@@ -1,30 +1,28 @@
-import { mkdir, stat, writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { AppError } from '../utils/errors.js';
-import { runFlowScriptEditor } from '../ui/flow-script-editor.js';
-import { runTextInputPrompt } from '../ui/text-input-prompt.js';
-import { parseFlowProgram } from './dsl/parser.js';
+import { getUi } from '../ui/ui-provider.js';
 
 const FLOW_TEMPLATE = `inputs {
+  startUrl: input = "https://example.com"
 }
 
 before() {
+  log("Before run")
 }
 
 running() {
-
+  goto("\${startUrl}")
+  waitLoad()
 }
 
 after() {
+  log("Done")
 }
 `;
 
 function toPosixPath(path: string): string {
   return path.split(sep).join('/');
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  return stat(path).then(() => true, () => false);
 }
 
 function normalizeFlowScriptName(value: string): string {
@@ -40,8 +38,9 @@ function normalizeFlowScriptName(value: string): string {
 
 export async function createFlowScript(): Promise<string | undefined> {
   const scriptsDir = resolve(process.cwd(), 'scripts');
+  const ui = await getUi();
 
-  const scriptName = await runTextInputPrompt({
+  const scriptName = await ui.runTextInputPrompt({
     title: 'Create flow script: script name',
     validate: (value) => {
       try {
@@ -57,16 +56,7 @@ export async function createFlowScript(): Promise<string | undefined> {
 
   const fileName = normalizeFlowScriptName(scriptName);
   const filePath = join(scriptsDir, fileName);
-  if (await pathExists(filePath)) throw new AppError(`Flow script already exists: ${toPosixPath(relative(process.cwd(), filePath))}`);
-
-  const source = await runFlowScriptEditor({
-    filePath: toPosixPath(relative(process.cwd(), filePath)),
-    initialSource: FLOW_TEMPLATE,
-  });
-
-  if (source === undefined) return undefined;
-
-  parseFlowProgram(source);
+  const source = FLOW_TEMPLATE;
   await mkdir(scriptsDir, { recursive: true });
   await writeFile(filePath, source, 'utf8');
 

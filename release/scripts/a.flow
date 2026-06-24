@@ -1,0 +1,15 @@
+inputs {
+  name: file = ""
+  name: text = ""
+}
+
+before() {
+  log('${text}')
+}
+
+running() {
+
+}
+
+after() {
+}

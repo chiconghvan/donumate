@@ -18,6 +18,7 @@ export type RemoteValue = {
   type: string;
   value?: unknown;
   internalId?: string;
+  sharedId?: string;
 };
 
 export type BrowsingContextInfo = {
@@ -37,6 +38,10 @@ export type BrowsingContextCreateResult = {
 export type ScriptEvaluateResult = {
   realm?: string;
   result: RemoteValue;
+};
+
+export type BidiSharedReference = {
+  sharedId: string;
 };
 
 export type BidiPointerMoveAction = {

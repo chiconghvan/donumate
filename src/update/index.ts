@@ -1,4 +1,4 @@
-import { runUpdatePrompt } from '../ui/update-prompt.js';
+import { getUi } from '../ui/ui-provider.js';
 import { checkForUpdate } from './github-release.js';
 import { installWindowsUpdate } from './windows-self-update.js';
 
@@ -16,7 +16,8 @@ export async function maybeRunUpdateCheck({ currentVersion, updateCheck = true }
   const update = await checkForUpdate(currentVersion);
   if (!update) return;
 
-  const choice = await runUpdatePrompt(update);
+  const ui = await getUi();
+  const choice = await ui.runUpdatePrompt(update);
   if (choice !== 'install') return;
 
   try {

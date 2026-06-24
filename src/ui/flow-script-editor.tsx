@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { parseFlowProgram } from '../runtime/dsl/parser.js';
 import { FLOW_COMPLETIONS, FLOW_INPUT_COMPLETIONS, type FlowCompletionItem } from '../runtime/dsl/catalog.js';
+import type { FlowInputDefinition, FlowStatement } from '../runtime/dsl/types.js';
 import { runInkPrompt } from './ink-runner.js';
 import { uiTheme } from './ui-theme.js';
 
@@ -58,6 +59,17 @@ function tokenStart(line: string, column: number): number {
   return index;
 }
 
+/** tokenStart that also recognizes `$` prefix for ${variable} completions */
+function dollarTokenStart(line: string, column: number): number {
+  let index = column;
+  while (index > 0 && /[A-Za-z0-9_-]/.test(line[index - 1] ?? '')) index -= 1;
+  // If preceding char is $, include it (but not if it's part of \${)
+  if (index > 0 && line[index - 1] === '$' && line.substring(index, column).length > 0) {
+    index -= 1;
+  }
+  return index;
+}
+
 function currentToken(line: string, column: number): { token: string; start: number } {
   const start = tokenStart(line, column);
   return { token: line.slice(start, column), start };
@@ -75,6 +87,21 @@ function getActiveCompletions(token: string, isInputBlock: boolean): FlowComplet
   return source.filter((item) => matchesCompletion(item, token));
 }
 
+/** Check if the current position looks like inside ${...} — preceding text has `${` with no intervening `}` */
+function isInsideInterpolation(line: string, column: number): boolean {
+  return interpolationStart(line, column) >= 0;
+}
+
+/** Return variable-only completions for ${...} context */
+function getInterpolationCompletions(source: string, rawToken: string): FlowCompletionItem[] {
+  // Strip leading $ if present
+  const token = rawToken.startsWith('$') ? rawToken.slice(1) : rawToken;
+  const vars = extractVariableNames(source);
+  if (!token) return vars;
+  const lowered = token.toLowerCase();
+  return vars.filter((v) => v.name.toLowerCase().startsWith(lowered));
+}
+
 function isInsideInputsBlock(lines: string[], cursor: Cursor): boolean {
   let block = false;
   for (let lineIndex = 0; lineIndex <= cursor.line; lineIndex += 1) {
@@ -84,6 +111,43 @@ function isInsideInputsBlock(lines: string[], cursor: Cursor): boolean {
     if (block && line === '}') block = false;
   }
   return false;
+}
+
+/** Detect if cursor is inside ${ ... } interpolation (no `}` between `${` and cursor) */
+function interpolationStart(line: string, column: number): number {
+  let i = column;
+  while (i > 0) {
+    const c = line[i - 1] ?? '';
+    if (c === '}') return -1;
+    if (i >= 2 && line[i - 2] === '$' && c === '{') return i - 2;
+    i -= 1;
+  }
+  return -1;
+}
+
+/** Extract variable names from parsed flow program (inputs + assignments) */
+function extractVariableNames(source: string): FlowCompletionItem[] {
+  try {
+    const program = parseFlowProgram(source);
+    const names = new Set<string>();
+    for (const input of program.inputs) {
+      if (input.name) names.add(input.name);
+    }
+    for (const block of [program.beforeRunProfile, program.main, program.afterKillProfile]) {
+      for (const stmt of block) {
+        if (stmt.type === 'assignment' && stmt.name) names.add(stmt.name);
+      }
+    }
+    return Array.from(names).sort().map((name) => ({
+      name,
+      aliases: [],
+      desc: 'variable',
+      kind: 'syntax' as const,
+      snippet: name + '}',
+    }));
+  } catch {
+    return [];
+  }
 }
 
 function firstEmptySlot(snippet: string): number {
@@ -145,13 +209,29 @@ export function FlowScriptEditor({ filePath, initialSource, onSubmit, onCancel }
   const [completion, setCompletion] = useState<CompletionState>({ open: false, forced: false, cursor: 0 });
   const [error, setError] = useState<string>();
 
-  const tokenInfo = currentToken(lines[cursor.line] ?? '', cursor.column);
+  const lineText = lines[cursor.line] ?? '';
+  const rawTokenInfo = currentToken(lineText, cursor.column);
+  // Variable context: inside ${ ... } or cursor on/after a bare $ without { yet
+  const insideInterp = isInsideInterpolation(lineText, cursor.column);
+  const atDollar = rawTokenInfo.start > 0 && lineText[rawTokenInfo.start - 1] === '$';
+  const varContext = insideInterp || atDollar;
+  // In variable context, include $ prefix in the token so completions filter correctly
+  const tokenInfo = varContext && atDollar
+    ? { token: '$' + rawTokenInfo.token, start: rawTokenInfo.start - 1 }
+    : rawTokenInfo;
   const isInputBlock = isInsideInputsBlock(lines, cursor);
+  const source = joinLines(lines);
   const completions = useMemo(() => {
     if (!completion.open) return [];
     if (!completion.forced && tokenInfo.token.length === 0) return [];
+    if (varContext) {
+      const varToken = tokenInfo.token.startsWith('$') ? tokenInfo.token.slice(1).toLowerCase() : tokenInfo.token.toLowerCase();
+      const vars = extractVariableNames(source);
+      if (!varToken) return vars.slice(0, MAX_COMPLETIONS);
+      return vars.filter((v) => v.name.toLowerCase().startsWith(varToken)).slice(0, MAX_COMPLETIONS);
+    }
     return getActiveCompletions(tokenInfo.token, isInputBlock).slice(0, MAX_COMPLETIONS);
-  }, [completion.open, completion.forced, tokenInfo.token, isInputBlock]);
+  }, [completion.open, completion.forced, tokenInfo.token, isInputBlock, varContext, source]);
   const completionOpen = completion.open && completions.length > 0;
   const completionCursor = clamp(completion.cursor, 0, Math.max(completions.length - 1, 0));
 
@@ -288,7 +368,9 @@ export function FlowScriptEditor({ filePath, initialSource, onSubmit, onCancel }
       setLines(next.lines);
       setCursorClamped(next.cursor, next.lines);
       setError(undefined);
-      if (/^[A-Za-z0-9_-]+$/.test(input)) setCompletion({ open: true, forced: false, cursor: 0 });
+      // Trigger autocomplete: $ opens variable picker, word chars continue current
+      if (input === '$') setCompletion({ open: true, forced: true, cursor: 0 });
+      else if (/^[A-Za-z0-9_-]+$/.test(input)) setCompletion({ open: true, forced: false, cursor: 0 });
       else setCompletion((current) => ({ ...current, open: false, cursor: 0 }));
     }
   });

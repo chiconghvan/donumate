@@ -25,6 +25,7 @@ Canonical `.flow` syntax and command/function reference. Command call style: `na
   - `"He said ""hi"""` -> `He said "hi"`
   - `'it''s ok'` -> `it's ok`
 - Windows path viết thẳng: `"C:\Temp\note.txt"`.
+- `rDelay`, `rDelay()`, `rDelay(min,max)` đặt cuối bất kỳ command line nào để delay sau command execute.
 
 ## Create flow script editor
 
@@ -39,12 +40,31 @@ Editor keys:
 - `Ctrl+S` validates script syntax and saves.
 - `Esc` closes autocomplete first, then cancels editor.
 
+## Check script
+
+Run static checker before runtime:
+
+```bash
+pnpm start check --script scripts/example.flow
+```
+
+Checker reports line-based errors for:
+
+- syntax
+- unknown command/function
+- wrong arg count
+- undefined variable
+- loop/workflow misuse
+- page-only command/function in wrong block
+
+Checker uses same runtime DSL spec as executor. If runtime command/function metadata changes, update shared runtime spec and executor together.
+
 Snippet examples:
 
 ```flow
-nav('')
-delay(,)
-httpRequest('','','','',rDelay())
+nav('', rDelay())
+delay(, rDelay())
+httpRequest('','','','', rDelay())
 ```
 
 Text inputs use quotes (`''`). Number/boolean slots stay empty/unquoted so you can type raw values.
@@ -89,11 +109,11 @@ before() {
 }
 
 running() {
-  nav("${url}")
+  nav("${url}", rDelay())
   waitLoad()
   click("${xpath}")
-  fileUpload("E:\Temp\upload.png", "//input[@type='file']")
-  httpRequest("https://httpbin.org/post", POST, {"content-type":"application/json"}, {"ok":true})
+  fileUpload("E:\Temp\upload.png", "//input[@type='file']", rDelay())
+  httpRequest("https://httpbin.org/post", POST, {"content-type":"application/json"}, {"ok":true}, rDelay())
 }
 
 after() {
@@ -208,6 +228,47 @@ contains("ABCD", "A")
 contains("", keyword)
 code = 2FA(YAFBRQVDXAOODIOBTGURV43MJKCXLZCI)
 ```
+
+### Excel profile mapping
+
+Khi tick `mapProfileName` trong Script Settings, `inputExcelFile` tự động map row theo profile name ở cột A.
+
+Excel format:
+
+| A | B | C | D |
+|---|---|---|---|
+| profile_1 | user1@gmail.com | pass123 | https://example.com |
+| profile_2 | user2@gmail.com | pass456 | https://test.com |
+
+Sử dụng column letter trong ngoặc:
+
+```flow
+running() {
+  set username = ${inputExcelFile[B]}
+  set password = ${inputExcelFile[C]}
+  set url = ${inputExcelFile[D]}
+
+  log("User: ${username}")
+  log("Pass: ${password}")
+}
+```
+
+Hoặc function syntax:
+
+```flow
+running() {
+  set username = inputExcelFile("B")
+  set password = inputExcelFile("C")
+}
+```
+
+Rule:
+- Cột A chứa profile name, phải trùng khớp với tên profile đang chạy.
+- `inputExcelFile[A]` đọc giá trị ở cột A (tức profile name).
+- `inputExcelFile[B]` đọc giá trị ở cột B, cùng row.
+- Hỗ trợ column letter: `A`-`Z`, `AA`, `AB`, ...
+- Nếu profile name không tìm thấy ở cột A → lỗi và dừng script.
+- `mapProfileName` là Script Setting, mặc định `false`.
 
 ### String check
 

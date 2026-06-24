@@ -10,6 +10,7 @@ import type {
   FlowProgram,
   FlowStatement,
 } from './types.js';
+import { normalizeFlowCommandName } from './runtime-spec.js';
 
 const BLOCK_PATTERNS: Array<{ key: keyof Pick<FlowProgram, 'beforeRunProfile' | 'main' | 'afterKillProfile'>; pattern: RegExp }> = [
   { key: 'beforeRunProfile', pattern: /^(?:before(?:\s+run\s+profile)?|before\s*\(\s*\))\s*(\{)?\s*$/i },
@@ -248,20 +249,11 @@ function parseFlowLine(raw: string, lineNumber: number): FlowCommand | null {
   if (!functionLike) throw new AppError(`Line ${lineNumber}: expected commandName(arg1, arg2).`);
 
   return {
-    command: normalizeCommandName(functionLike[1] ?? ''),
+    command: normalizeFlowCommandName(functionLike[1] ?? ''),
     args: splitArgs(functionLike[2] ?? '', lineNumber, ',').map((arg) => unquote(arg, lineNumber)),
     lineNumber,
     raw,
   };
-}
-
-function normalizeCommandName(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower === 'nav' || lower === 'navurl') return 'goto';
-  if (lower === 'waitxpath') return 'waitelement';
-  if (lower === 'type') return 'typetext';
-  if (lower === 'executejs') return 'js';
-  return name;
 }
 
 export function parseExpression(text: string, lineNumber: number): FlowExpression {
@@ -659,6 +651,22 @@ function readRawQuotedString(input: string, startIndex: number, lineNumber: numb
   let index = startIndex + 1;
   while (index < input.length) {
     const char = input[index] ?? '';
+
+    if (char === '$' && input[index + 1] === '{') {
+      value += '${';
+      index += 2;
+      let braceDepth = 1;
+      while (index < input.length && braceDepth > 0) {
+        const c = input[index] ?? '';
+        if (c === '{') braceDepth += 1;
+        else if (c === '}') braceDepth -= 1;
+        value += c;
+        index += 1;
+      }
+      if (braceDepth !== 0) throw new AppError(`Line ${lineNumber}: unterminated interpolation.`);
+      continue;
+    }
+
     if (char === quote) {
       if (input[index + 1] === quote) {
         value += quote;

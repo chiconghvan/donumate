@@ -1,4 +1,4 @@
-import { readFile, stat } from 'fs/promises';
+import { stat } from 'fs/promises';
 import { resolve } from 'path';
 import type { BidiClient } from '../bidi/bidi-client.js';
 import type { BidiKeyAction, BidiPointerAction, BrowsingContextInfo } from '../bidi/bidi-types.js';
@@ -25,6 +25,67 @@ const VIRTUAL_MOUSE_ID = 'donut-virtual-mouse';
 const VIRTUAL_KEYBOARD_ID = 'donut-virtual-keyboard';
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const CONTROL_KEY = '';
+const KEY_CODES: Record<string, string> = {
+  null: '\uE000',
+  cancel: '\uE001',
+  help: '\uE002',
+  backspace: '\uE003',
+  tab: '\uE004',
+  clear: '\uE005',
+  return: '\uE006',
+  enter: '\uE007',
+  shift: '\uE008',
+  control: '\uE009',
+  alt: '\uE00A',
+  pause: '\uE00B',
+  escape: '\uE00C',
+  space: '\uE00D',
+  pageup: '\uE00E',
+  pagedown: '\uE00F',
+  end: '\uE010',
+  home: '\uE011',
+  arrowleft: '\uE012',
+  arrowup: '\uE013',
+  arrowright: '\uE014',
+  arrowdown: '\uE015',
+  insert: '\uE016',
+  delete: '\uE017',
+  semicolon: '\uE018',
+  equals: '\uE019',
+  numpad0: '\uE01A',
+  numpad1: '\uE01B',
+  numpad2: '\uE01C',
+  numpad3: '\uE01D',
+  numpad4: '\uE01E',
+  numpad5: '\uE01F',
+  numpad6: '\uE020',
+  numpad7: '\uE021',
+  numpad8: '\uE022',
+  numpad9: '\uE023',
+  multiply: '\uE024',
+  add: '\uE025',
+  separator: '\uE026',
+  subtract: '\uE027',
+  decimal: '\uE028',
+  divide: '\uE029',
+  f1: '\uE031',
+  f2: '\uE032',
+  f3: '\uE033',
+  f4: '\uE034',
+  f5: '\uE035',
+  f6: '\uE036',
+  f7: '\uE037',
+  f8: '\uE038',
+  f9: '\uE039',
+  f10: '\uE03A',
+  f11: '\uE03B',
+  f12: '\uE03C',
+  meta: '\uE03D',
+  command: '\uE03D',
+  capslock: '\uE03E',
+  numlock: '\uE03F',
+  scrolllock: '\uE040',
+};
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
 
@@ -104,7 +165,7 @@ export class PageAutomation {
     await sleep(ms);
   }
 
-  /** Execute arbitrary JS expression in page context */
+  /** Execute arbitrary JS in page context with async IIFE support */
   async evaluate<T = unknown>(expression: string): Promise<T> {
     if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     return this.bidi.evaluate(this.contextId, expression) as Promise<T>;
@@ -280,33 +341,22 @@ export class PageAutomation {
   }
 
   async executeJs<T = unknown>(script: string): Promise<T> {
-    return this.evaluate<T>(script);
+    return this.evaluate<T>(wrapAsyncJs(script));
   }
 
   async fileUpload(filePath: string, xpath: string): Promise<void> {
+    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     const absolutePath = resolve(filePath);
     const file = await stat(absolutePath);
     if (!file.isFile()) throw new Error(`Upload path is not a file: ${absolutePath}`);
-    const dataUrl = `data:application/octet-stream;base64,${(await readFile(absolutePath)).toString('base64')}`;
-    const uploaded = await this.evaluate<boolean>(`(() => {
+
+    const element = await this.bidi.evaluateSharedReference(this.contextId, `(() => {
       const xpath = ${JSON.stringify(xpath)};
-      const fileName = ${JSON.stringify(absolutePath.split(/[\\/]/).pop() ?? 'upload')};
-      const dataUrl = ${JSON.stringify(dataUrl)};
       const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!(node instanceof HTMLInputElement) || node.type !== 'file') return false;
-      return fetch(dataUrl)
-        .then((response) => response.blob())
-        .then((blob) => {
-          const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
-          const transfer = new DataTransfer();
-          transfer.items.add(file);
-          node.files = transfer.files;
-          node.dispatchEvent(new Event('input', { bubbles: true }));
-          node.dispatchEvent(new Event('change', { bubbles: true }));
-          return node.files?.length === 1;
-        });
+      if (!(node instanceof HTMLInputElement) || node.type !== 'file') throw new Error('XPath must point to input[type=file].');
+      return node;
     })()`);
-    if (!uploaded) throw new Error(`XPath must point to input[type=file]: ${xpath}`);
+    await this.bidi.setFiles(this.contextId, element, [absolutePath]);
   }
 
   /** Count all interactive elements (a, button, input, etc.) */
@@ -558,9 +608,26 @@ export class PageAutomation {
     return min + Math.random() * (max - min);
   }
 
+  async sendKey(...keys: string[]): Promise<void> {
+    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
+    const mapped = keys.map((k) => KEY_CODES[k.toLowerCase()] ?? k);
+    const actions: BidiKeyAction[] = [];
+    for (const code of mapped) actions.push({ type: 'keyDown', value: code });
+    for (let i = mapped.length - 1; i >= 0; i--) actions.push({ type: 'keyUp', value: mapped[i] ?? '' });
+    try {
+      await this.bidi.performActions(this.contextId, [{ type: 'key', id: VIRTUAL_KEYBOARD_ID, actions }]);
+    } finally {
+      await this.bidi.releaseActions(this.contextId);
+    }
+  }
+
   private randomInt(min: number, max: number): number {
     return Math.floor(this.randomFloat(min, max + 1));
   }
+}
+
+function wrapAsyncJs(script: string): string {
+  return `(async () => {\n${script}\n})()`;
 }
 
 function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[] {

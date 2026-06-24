@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import { AppError } from '../utils/errors.js';
 import { fromRemoteValue } from './commands.js';
-import type { BidiInputSourceActions, BidiResponse, BrowsingContextCreateResult, BrowsingContextTree, ScriptEvaluateResult } from './bidi-types.js';
+import type { BidiInputSourceActions, BidiResponse, BidiSharedReference, BrowsingContextCreateResult, BrowsingContextTree, ScriptEvaluateResult } from './bidi-types.js';
 
 type Pending = {
   resolve(value: unknown): void;
@@ -98,6 +98,22 @@ export class BidiClient {
       awaitPromise: true,
     });
     return fromRemoteValue(result.result);
+  }
+
+  async evaluateSharedReference(contextId: string, expression: string): Promise<BidiSharedReference> {
+    const result = await this.command<ScriptEvaluateResult>('script.evaluate', {
+      target: { context: contextId },
+      expression,
+      awaitPromise: true,
+      resultOwnership: 'root',
+    });
+    const sharedId = result.result.sharedId;
+    if (!sharedId) throw new AppError('BiDi script evaluation did not return a shared reference.');
+    return { sharedId };
+  }
+
+  async setFiles(contextId: string, element: BidiSharedReference, files: string[]): Promise<void> {
+    await this.command('input.setFiles', { context: contextId, element, files });
   }
 
   async performActions(contextId: string, actions: BidiInputSourceActions[]): Promise<void> {

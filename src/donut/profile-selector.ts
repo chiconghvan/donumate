@@ -1,6 +1,6 @@
 import { AppError, CliBackError } from '../utils/errors.js';
 import { globalAbort } from '../utils/abort.js';
-import { runListPicker } from '../ui/list-picker.js';
+import { getUi } from '../ui/ui-provider.js';
 import type { ApiProfile } from './api-types.js';
 
 export function camoufoxProfiles(profiles: ApiProfile[]): ApiProfile[] {
@@ -24,7 +24,8 @@ export async function selectCamoufoxProfile(profiles: ApiProfile[], defaultProfi
     })),
   ];
 
-  const selectedVal = await runListPicker({
+  const ui = await getUi();
+  const selectedVal = await ui.runListPicker({
     title: `Select Camoufox profile (${choices.length} found)`,
     options: selectChoices,
     initialValue: defaultProfileId ?? '__back__',

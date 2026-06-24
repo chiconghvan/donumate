@@ -53,6 +53,14 @@ Run a `.flow` script:
 pnpm start run --profile <profile-id> --script ./scripts/example.flow
 ```
 
+Check `.flow` script before run:
+
+```bash
+pnpm start check --script ./scripts/example.flow
+```
+
+`check` print syntax, command, variable, loop, workflow diagnostics. No browser launch, no Donut API call.
+
 Override `.flow` inputs:
 
 ```bash
@@ -123,10 +131,12 @@ Random delay after command:
 
 ```flow
 running() {
-  nav("https://example.com") rDelay
-  click("//button") rDelay(3000,4000)
+  nav("https://example.com", rDelay())
+  click("//button", rDelay(3000,4000))
 }
 ```
+
+`rDelay`, `rDelay()`, `rDelay(min,max)` can be placed as last input of any command. Runtime runs command first, then sleeps random ms.
 
 Inputs render in one CLI GUI frame. Use Tab/arrow keys to move, Left/Right to toggle/cycle/open path picker, Enter to submit/open.
 
@@ -134,7 +144,7 @@ Create new scripts from the root `Create flow script` menu. Type a script name, 
 
 - type a command prefix like `http` to open autocomplete (`httpRequest`, `httpDownload`)
 - press ↑/↓ to choose, Enter/Tab to insert snippet
-- examples: `nav` -> `nav('')`, `delay` -> `delay(,)`, `httpRequest` -> `httpRequest('','','','',rDelay())`
+- examples: `nav` -> `nav('', rDelay())`, `delay` -> `delay(, rDelay())`, `httpRequest` -> `httpRequest('','','','', rDelay())`
 - press Ctrl+S to validate and save
 
 
@@ -143,6 +153,7 @@ Hidden script settings are injected automatically when missing:
 - `hardless: checkbox = false`
 - `threads: number = 1`
 - `inputExcelFile: inputExcelFile = ""`
+- `mapProfileName: checkbox = false`
 
 Legacy flat `.flow` command files still run as main logic.
 
@@ -151,7 +162,7 @@ More `.flow` commands:
 ```flow
 running() {
   page = "https://example.com"
-  navUrl("${page}")
+  navUrl("${page}", rDelay())
   waitLoad()
   getUrl()
   waitElement("//h1", 10000)
@@ -170,13 +181,29 @@ running() {
 }
 
 before() {
-  httpRequest("https://example.com", GET, {})
-  httpDownload("https://example.com/image.png", "./downloads/image.png")
+  httpRequest("https://example.com", GET, {}, rDelay())
+  httpDownload("https://example.com/image.png", "./downloads/image.png", rDelay())
   fileReadAllText("C:\Temp\note.txt")
 }
 ```
 
 Browser/page commands only run inside `running()`. HTTP/file commands can run in any block. Full docs: `docs/flow-scripting.md`.
+
+## Check command
+
+`check` uses same runtime DSL spec as executor. When add/change command or function metadata, update shared runtime spec and executor together. Checker must stay in sync with runtime command library.
+
+Excel profile mapping — tick `mapProfileName` in Script Settings to auto-map rows by profile name in column A:
+
+```flow
+running() {
+  set username = ${inputExcelFile[B]}
+  set password = ${inputExcelFile[C]}
+  log("User: ${username}, Pass: ${password}")
+}
+```
+
+Excel format: column A = profile name, B/C/D = data per profile. If profile name not found in column A, script stops with error.
 
 ## Build
 

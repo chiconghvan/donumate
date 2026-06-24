@@ -1,8 +1,10 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
 import type { FlowInputDefinition, FlowInputValue } from './types.js';
+
+const XLSXApi = XLSX as typeof import('xlsx');
 
 const NUMBER_PATTERN = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
@@ -87,7 +89,7 @@ function resolvePath(value: string): string {
 }
 
 function readExcelTotalRows(filePath: string): number {
-  const workbook = XLSX.readFile(filePath);
+  const workbook = XLSXApi.readFile(filePath);
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) return 0;
   const sheet = workbook.Sheets[sheetName];

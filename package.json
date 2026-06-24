@@ -1,39 +1,43 @@
 {
   "name": "donumate",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Standalone CLI for launching Donut Camoufox profiles and automating them over WebDriver BiDi.",
   "type": "module",
   "bin": {
     "donumate": "./dist/cli.js"
   },
+  "scripts": {
+    "dev": "node --import tsx/esm src/cli.ts",
+    "start": "node --import tsx/esm src/cli.ts",
+    "build": "node build.mjs dev",
+    "build:exe": "node build.mjs exe",
+    "build:all": "node build.mjs all",
+    "build:clean": "node build.mjs clean",
+    "build:tsc": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
   "pkg": {
     "scripts": [
-      "dist/**/*.js"
+      "dist/cli.js"
     ],
     "assets": [
-      "scripts/**/*",
-      "README.md"
+      "node_modules/.pnpm/yoga-layout@3.2.1/node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js",
+      "dist-exe/script-builder/web/**/*"
     ],
     "targets": [
-      "node22-win-x64",
-      "node22-linux-x64",
-      "node22-macos-x64",
-      "node22-macos-arm64"
+      "node22-win-x64"
     ],
     "outputPath": "release"
   },
-  "scripts": {
-    "dev": "tsx src/cli.ts",
-    "start": "tsx src/cli.ts",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
   "dependencies": {
+    "@xyflow/react": "^12.11.1",
     "commander": "^13.1.0",
     "dotenv": "^16.4.7",
     "esbuild": "^0.28.1",
     "ink": "^5.2.1",
+    "lucide-react": "^1.21.0",
     "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "ws": "^8.18.0",
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"
@@ -41,7 +45,10 @@
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.14",
+    "cross-env": "^7.0.3",
+    "tsup": "^8.5.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
   },

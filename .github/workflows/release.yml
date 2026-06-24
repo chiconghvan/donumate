@@ -19,20 +19,16 @@ jobs:
         include:
           - name: windows-x64
             os: windows-latest
-            pkg_target: node22-win-x64
-            asset_name: donumate-windows-x64.exe
+            asset_name: donumate-windows-x64.zip
           - name: linux-x64
             os: ubuntu-latest
-            pkg_target: node22-linux-x64
-            asset_name: donumate-linux-x64
+            asset_name: donumate-linux-x64.zip
           - name: macos-x64
             os: macos-13
-            pkg_target: node22-macos-x64
-            asset_name: donumate-macos-x64
+            asset_name: donumate-macos-x64.zip
           - name: macos-arm64
             os: macos-latest
-            pkg_target: node22-macos-arm64
-            asset_name: donumate-macos-arm64
+            asset_name: donumate-macos-arm64.zip
 
     steps:
       - name: Checkout
@@ -55,28 +51,33 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build
+      - name: Bundle with tsup
         run: pnpm build
 
-      - name: Package native binary
+      - name: Prepare release archive
         shell: bash
         run: |
-          mkdir -p release
-          pnpm dlx @yao-pkg/pkg package.json --targets ${{ matrix.pkg_target }} --output release/${{ matrix.asset_name }}
-
-      - name: Smoke test binary
-        shell: bash
-        run: |
+          mkdir -p release/donumate
+          cp dist/cli.js release/donumate/donumate
+          chmod +x release/donumate/donumate
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            ./release/${{ matrix.asset_name }} --help
-          elif [[ "${{ matrix.name }}" == "macos-arm64" && "$(uname -m)" != "arm64" ]]; then
-            echo "Skipping macOS arm64 smoke test on $(uname -m) runner"
+            jq '. + {bin:{donumate:"donumate"}}' package.json > release/donumate/package.json
           else
-            chmod +x ./release/${{ matrix.asset_name }}
-            ./release/${{ matrix.asset_name }} --help
+            jq '. + {bin:{donumate:"donumate"}}' package.json > release/donumate/package.json
           fi
+          # Copy node_modules for runtime deps that are external (esbuild, xlsx)
+          cp -r node_modules release/donumate/node_modules
+          cd release
+          zip -r ${{ matrix.asset_name }} donumate/
+          cd ..
+          echo "Archived: release/${{ matrix.asset_name }}"
 
-      - name: Upload binary artifact
+      - name: Verify archive
+        shell: bash
+        run: |
+          unzip -l release/${{ matrix.asset_name }} | head -20
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}

@@ -1,5 +1,5 @@
 import { DonutApiClient } from '../donut/api-client.js';
-import { findProfileOrThrow, selectCamoufoxProfile } from '../donut/profile-selector.js';
+import { selectCamoufoxProfile } from '../donut/profile-selector.js';
 import { BidiClient } from '../bidi/bidi-client.js';
 import { PageAutomation } from './page-automation.js';
 import { loadWorkflow } from './script-loader.js';
@@ -63,6 +63,12 @@ const FLOW_SCRIPT_SETTING_INPUTS: FlowInputDefinition[] = [
     lineNumber: 0,
     defaultValue: '',
   },
+  {
+    name: 'mapProfileName',
+    type: 'checkbox',
+    lineNumber: 0,
+    defaultValue: false,
+  },
 ];
 
 function withFlowScriptSettingInputs(definitions: FlowInputDefinition[]): FlowInputDefinition[] {
@@ -73,6 +79,14 @@ function withFlowScriptSettingInputs(definitions: FlowInputDefinition[]): FlowIn
 function flowHeadlessValue(inputs: Record<string, FlowInputValue>, fallback: boolean): boolean {
   const value = inputs.hardless;
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function profileRuntimeInputs(profile: ApiProfile, run?: RunProfileResponse): Record<string, FlowInputValue> {
+  return {
+    profileID: run?.profile_id ?? profile.id,
+    profileName: run?.name ?? profile.name,
+    profileProxy: run?.proxy ?? '',
+  };
 }
 
 export async function runWorkflow(options: RunnerOptions): Promise<void> {
@@ -93,8 +107,7 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
     currentInputsState = { values: await loadSavedInputState(options.scriptSpec) ?? {}, cursor: 0 };
   }
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  if (options.profileId) {
     try {
       if (workflow.kind === 'flow') {
         const flowInputs = withFlowScriptSettingInputs(workflow.program.inputs);
@@ -113,24 +126,48 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
     }
     args = stringifyInputValues(inputs);
 
-    const profiles = await donut.listProfiles();
-    try {
-      profile = options.profileId
-        ? findProfileOrThrow(profiles, options.profileId)
-        : await selectCamoufoxProfile(profiles, currentProfileId);
-      currentProfileId = profile.id;
-    } catch (error) {
-      if (isCliBackError(error)) {
-        if (workflow.kind === 'flow' && workflow.program.inputs.length > 0) {
-          clearScreen();
-          continue;
+    profile = await donut.getProfile(options.profileId);
+  } else {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        if (workflow.kind === 'flow') {
+          const flowInputs = withFlowScriptSettingInputs(workflow.program.inputs);
+          const formResult = await runFlowInputForm(flowInputs, options.scriptInputs ?? {}, currentInputsState);
+          inputs = formResult.values;
+          currentInputsState = formResult.state;
+          await saveInputState(options.scriptSpec, formResult.state.values).catch((error: unknown) => logger.error(formatError(error)));
+        } else {
+          inputs = {};
         }
-        throw new CliBackError('Back', { inputsState: currentInputsState, profileId: currentProfileId });
+      } catch (error) {
+        if (isCliBackError(error)) {
+          throw new CliBackError('Back', { inputsState: currentInputsState });
+        }
+        throw error;
       }
-      throw error;
+      args = stringifyInputValues(inputs);
+
+      const profiles = await donut.listProfiles();
+      try {
+        profile = await selectCamoufoxProfile(profiles, currentProfileId);
+        currentProfileId = profile.id;
+      } catch (error) {
+        if (isCliBackError(error)) {
+          if (workflow.kind === 'flow' && workflow.program.inputs.length > 0) {
+            clearScreen();
+            continue;
+          }
+          throw new CliBackError('Back', { inputsState: currentInputsState, profileId: currentProfileId });
+        }
+        throw error;
+      }
+      break;
     }
-    break;
   }
+
+  inputs = { ...inputs!, ...profileRuntimeInputs(profile) };
+  args = stringifyInputValues(inputs);
 
   clearScreen();
   logger.info(`  Profile: ${profile.name}`);
@@ -162,6 +199,11 @@ export async function runWorkflow(options: RunnerOptions): Promise<void> {
       run = session.run;
       bidi = session.bidi;
       launched = true;
+
+      inputs = { ...inputs!, ...profileRuntimeInputs(profile, run) };
+      args = stringifyInputValues(inputs);
+      baseCtx.inputs = inputs;
+      baseCtx.args = args;
 
       const page = session.page;
 
@@ -228,7 +270,7 @@ type LaunchedProfileSession = {
   page: PageAutomation;
 };
 
-async function launchProfileWithRetry(options: LaunchProfileOptions): Promise<LaunchedProfileSession> {
+export async function launchProfileWithRetry(options: LaunchProfileOptions): Promise<LaunchedProfileSession> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= PROFILE_LAUNCH_MAX_ATTEMPTS; attempt++) {

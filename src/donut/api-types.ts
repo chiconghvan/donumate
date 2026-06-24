@@ -17,6 +17,8 @@ export const apiProfilesResponseSchema = z.object({
 
 export const runProfileResponseSchema = z.object({
   profile_id: z.string(),
+  name: z.string().optional(),
+  proxy: z.string().nullable().optional(),
   remote_debugging_port: z.number(),
   ws_url: z.string().nullable().optional(),
   headless: z.boolean(),
