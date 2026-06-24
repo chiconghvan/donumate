@@ -1,7 +1,26 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+dist-exe/
+release/
+
+# Local environment and logs
 .env
+.env.*
 *.log
-.DS_Store
 logPath
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Generated runtime/script artifacts
 *.gscript
+*.exe
+*.zip
+*.rar
+*.tmp

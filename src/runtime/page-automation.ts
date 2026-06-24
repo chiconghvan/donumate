@@ -91,7 +91,7 @@ const DEFAULT_TYPING_MAX_DELAY_MS = 140;
 
 type Point = { x: number; y: number };
 type Viewport = { width: number; height: number };
-type TargetPoint = Point & { viewport: Viewport };
+type TargetPoint = Point & { viewport: Viewport; scrolled: boolean };
 type PathPoint = Point & { duration: number };
 
 export type HumanTypingOptions = {
@@ -240,8 +240,11 @@ export class PageAutomation {
   /** Click first element matching XPath */
   async clickXPath(xpath: string): Promise<void> {
     const target = await this.resolveXPathTarget(xpath, 'clickable');
+    if (target.scrolled) await this.humanPause();
     await this.moveMouseTo(target);
+    await this.humanPause();
     await this.clickCurrentMousePosition(target);
+    await this.humanPause();
     this.mousePosition = { x: target.x, y: target.y };
   }
 
@@ -332,7 +335,9 @@ export class PageAutomation {
 
   async moveMouseXPath(xpath: string): Promise<void> {
     const target = await this.resolveXPathTarget(xpath, 'movable');
+    if (target.scrolled) await this.humanPause();
     await this.moveMouseTo(target);
+    await this.humanPause();
     this.mousePosition = { x: target.x, y: target.y };
   }
 
@@ -372,8 +377,11 @@ export class PageAutomation {
 
   private async clickAndFocusXPath(xpath: string, actionName: string): Promise<void> {
     const target = await this.resolveXPathTarget(xpath, actionName);
+    if (target.scrolled) await this.humanPause();
     await this.moveMouseTo(target);
+    await this.humanPause();
     await this.clickCurrentMousePosition(target);
+    await this.humanPause();
     this.mousePosition = { x: target.x, y: target.y };
 
     const focused = await this.evaluate<boolean>(`(() => {
@@ -415,24 +423,36 @@ export class PageAutomation {
       const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
       if (!(node instanceof Element)) return JSON.stringify({ ok: false, reason: 'XPath did not match an element.' });
 
-      node.scrollIntoView({ block: 'center', inline: 'center' });
-      const rect = node.getBoundingClientRect();
       const style = getComputedStyle(node);
       const viewport = { width: window.innerWidth, height: window.innerHeight };
-      const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
-      if (!visible) return JSON.stringify({ ok: false, reason: 'Element is not visible.' });
-
+      const readRect = () => node.getBoundingClientRect();
+      const isInViewport = (rect) =>
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < viewport.height &&
+        rect.left < viewport.width;
+      const rectBefore = readRect();
+      const visible = style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+      const scrolled = !isInViewport(rectBefore);
+      if (scrolled) node.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = readRect();
+      const stillVisible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+      const inViewport = isInViewport(rect);
+      const ready = stillVisible && inViewport;
+      if (!ready) return JSON.stringify({ ok: false, reason: 'Element is not visible or not in viewport.' });
       const marginX = Math.min(Math.max(rect.width * 0.2, 1), 12);
       const marginY = Math.min(Math.max(rect.height * 0.2, 1), 12);
       const jitterX = rect.width > 8 ? (Math.random() * 2 - 1) * Math.max(0, rect.width / 2 - marginX) * 0.45 : 0;
       const jitterY = rect.height > 8 ? (Math.random() * 2 - 1) * Math.max(0, rect.height / 2 - marginY) * 0.45 : 0;
       const x = Math.min(Math.max(rect.left + rect.width / 2 + jitterX, 0), Math.max(0, viewport.width - 1));
       const y = Math.min(Math.max(rect.top + rect.height / 2 + jitterY, 0), Math.max(0, viewport.height - 1));
-      return JSON.stringify({ ok: true, x, y, viewport });
+      return JSON.stringify({ ok: true, x, y, viewport, scrolled });
     })()`);
     const result = JSON.parse(String(raw)) as ({ ok: true } & TargetPoint) | { ok: false; reason: string };
     if (!result.ok) throw new Error(`XPath not found or not ${actionName}: ${xpath}. ${result.reason}`);
-    return { x: result.x, y: result.y, viewport: result.viewport };
+    return { x: result.x, y: result.y, viewport: result.viewport, scrolled: result.scrolled };
   }
 
   private async moveMouseTo(target: TargetPoint): Promise<void> {
@@ -623,6 +643,10 @@ export class PageAutomation {
 
   private randomInt(min: number, max: number): number {
     return Math.floor(this.randomFloat(min, max + 1));
+  }
+
+  private async humanPause(minMs = 200, maxMs = 700): Promise<void> {
+    await sleep(this.randomInt(minMs, maxMs));
   }
 }
 

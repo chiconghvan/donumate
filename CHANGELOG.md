@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+### Changes
+
+- `PageAutomation` now adds human-like pauses around XPath clicks and moves, and it scrolls targets into view before interacting with them when they are outside the viewport.
+
 ## 0.1.2
 
 ### New features
