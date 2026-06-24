@@ -2,15 +2,17 @@
 node_modules/
 
 # Build outputs
-dist/
-dist-exe/
-release/
+/dist/
+/dist-exe/
+/release/
 
 # Local environment and logs
 .env
 .env.*
+!.env.example
 *.log
 logPath
+.claude/settings.local.json
 
 # OS and editor noise
 .DS_Store
