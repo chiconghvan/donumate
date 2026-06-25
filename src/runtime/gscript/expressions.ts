@@ -6,14 +6,14 @@ export async function evaluateCondition(condition: string | undefined, ctx: Gscr
   const source = (condition ?? '').trim();
   if (!source) return false;
 
-  const hasElementMatch = /^(!)?hasElement\(([\s\S]*?)\)\s*(?:(=|!=)\s*([\s\S]*))?$/.exec(source);
+  const hasElementMatch = parseHasElement(source);
   if (hasElementMatch) {
-    const xpath = interpolate(hasElementMatch[2] ?? '', ctx.inputs);
+    const xpath = interpolate(hasElementMatch.xpath, ctx.inputs);
     const exists = await ctx.page?.existsXPath(xpath);
-    const actual = hasElementMatch[1] ? !Boolean(exists) : Boolean(exists);
-    if (!hasElementMatch[3]) return actual;
-    const expected = Boolean(normalizeComparable(readValue(hasElementMatch[4] ?? '', ctx.inputs)));
-    return hasElementMatch[3] === '=' ? actual === expected : actual !== expected;
+    const actual = hasElementMatch.negated ? !Boolean(exists) : Boolean(exists);
+    if (hasElementMatch.comparison === undefined) return actual;
+    const expected = Boolean(normalizeComparable(readValue(hasElementMatch.comparison, ctx.inputs)));
+    return hasElementMatch.equality ? actual === expected : actual !== expected;
   }
 
   const containsMatch = /^(!)?([\s\S]*?)\s+contains\s+([\s\S]*)$/i.exec(source) ?? /^(!)?contains\s+([\s\S]*)$/i.exec(source);
@@ -46,6 +46,36 @@ export async function evaluateCondition(condition: string | undefined, ctx: Gscr
   }
 
   return Boolean(normalizeComparable(readValue(source, ctx.inputs)));
+}
+
+function parseHasElement(source: string): { negated: boolean; xpath: string; comparison?: string; equality?: boolean } | undefined {
+  const match = /^(!)?\s*hasElement\(/i.exec(source);
+  if (!match) return undefined;
+  const negated = Boolean(match[1]);
+  let i = match[0].length;
+  let depth = 1;
+  let inQuote: string | undefined;
+  while (i < source.length) {
+    const ch = source[i];
+    if (inQuote) {
+      if (ch === inQuote && source[i - 1] !== '\\') inQuote = undefined;
+    } else if (ch === '"' || ch === "'") {
+      inQuote = ch;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) break;
+    }
+    i++;
+  }
+  if (depth !== 0) return undefined;
+  const xpath = source.slice(match[0].length, i).trim();
+  const rest = source.slice(i + 1).trim();
+  if (!rest) return { negated, xpath };
+  const compMatch = /^(=|!=)\s*([\s\S]*)$/.exec(rest);
+  if (!compMatch) return { negated, xpath };
+  return { negated, xpath, comparison: compMatch[2]?.trim(), equality: compMatch[1] === '=' };
 }
 
 function splitComparison(source: string): { left: string; operator: '=' | '!=' | '>' | '<' | '>=' | '<='; right: string } | undefined {

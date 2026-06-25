@@ -28,6 +28,7 @@ export type RunnerOptions = {
   bidiCommandTimeoutMs: number;
   scriptSpec: string;
   scriptInputs?: FlowInputOverrides;
+  minimalLog?: boolean;
   signal?: AbortSignal;
   initialInputsState?: { values: Record<string, string>; cursor: number };
   initialProfileId?: string;

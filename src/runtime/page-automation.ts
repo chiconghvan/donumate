@@ -219,8 +219,8 @@ export class PageAutomation {
   }
 
   /** Wait until an XPath matches at least one element */
-  async waitForXPath(xpath: string, timeoutMs = 10000): Promise<void> {
-    const found = await this.evaluate<boolean>(`(() => {
+  async waitForXPath(xpath: string, timeoutMs = 10000): Promise<boolean> {
+    return this.evaluate<boolean>(`(() => {
       const xpath = ${JSON.stringify(xpath)};
       const timeoutMs = ${JSON.stringify(timeoutMs)};
       return new Promise((resolve) => {
@@ -234,7 +234,6 @@ export class PageAutomation {
         check();
       });
     })()`);
-    if (!found) throw new Error(`Timed out waiting for XPath: ${xpath}`);
   }
 
   /** Click first element matching XPath */
@@ -299,12 +298,12 @@ export class PageAutomation {
     await this.typeTextXPath(xpath, text);
   }
 
-  /** Read text from first element matching XPath */
+  /** Read inner text from first element matching XPath */
   async textXPath(xpath: string): Promise<string> {
     const text = await this.evaluate<string | null>(`(() => {
       const xpath = ${JSON.stringify(xpath)};
       const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      return node ? (node.textContent ?? '') : null;
+      return node ? (node.innerText ?? node.textContent ?? '') : null;
     })()`);
     if (text === null) throw new Error(`XPath not found: ${xpath}`);
     return text;

@@ -46,6 +46,7 @@ export type GscriptExecutionContext = Partial<WorkflowContext> & {
   args: Record<string, string>;
   log: (...args: unknown[]) => void;
   sleep: (ms: number) => Promise<void>;
+  minimalLog?: boolean;
 };
 
 export type GscriptSignal = 'next' | 'exit' | 'stop' | undefined;

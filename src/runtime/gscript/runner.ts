@@ -2,7 +2,7 @@ import { DonutApiClient } from '../../donut/api-client.js';
 import { selectCamoufoxProfile } from '../../donut/profile-selector.js';
 import { BidiClient } from '../../bidi/bidi-client.js';
 import { PageAutomation } from '../page-automation.js';
-import { stringifyInputValues, type FlowInputOverrides } from '../dsl/input-values.js';
+import { coerceAndValidateInputs, stringifyInputValues, type FlowInputOverrides } from '../dsl/input-values.js';
 import { runFlowInputForm } from '../../ui/run-flow-input-form.js';
 import { CliBackError, formatError, isCliBackError } from '../../utils/errors.js';
 import { setCleaningUp } from '../../utils/abort.js';
@@ -12,18 +12,49 @@ import { saveInputState, loadSavedInputState } from '../input-state-store.js';
 import { clearScreen, launchProfileWithRetry, type RunnerOptions } from '../runner.js';
 import type { ApiProfile, RunProfileResponse } from '../../donut/api-types.js';
 import type { FlowInputValue } from '../types.js';
-import type { GscriptExecutionContext } from './types.js';
+import type { GscriptBlockNode, GscriptExecutionContext } from './types.js';
 import { executeGscriptBlock } from './executor.js';
 import { loadGscriptProgram, toFlowInputDefinitions } from './parser.js';
 
 export type GscriptRunnerOptions = RunnerOptions;
 
-function profileRuntimeInputs(profile: ApiProfile, run?: RunProfileResponse): Record<string, FlowInputValue> {
+function hasAllInputOverrides(definitions: { name: string }[], overrides: FlowInputOverrides): boolean {
+  return definitions.every((definition) => overrides[definition.name] !== undefined);
+}
+
+async function resolveInputs(
+  options: GscriptRunnerOptions,
+  inputDefinitions: ReturnType<typeof toFlowInputDefinitions>,
+  currentInputsState: { values: Record<string, string>; cursor: number }
+): Promise<{
+  inputs: Record<string, FlowInputValue>;
+  nextState: { values: Record<string, string>; cursor: number };
+}> {
+  if (inputDefinitions.length === 0) {
+    return { inputs: {}, nextState: currentInputsState };
+  }
+
+  const overrides = options.scriptInputs ?? {};
+  if (hasAllInputOverrides(inputDefinitions, overrides)) {
+    const inputs = await coerceAndValidateInputs(inputDefinitions, overrides);
+    return { inputs, nextState: { values: overrides, cursor: 0 } };
+  }
+
+  const formResult = await runFlowInputForm(inputDefinitions, overrides, currentInputsState);
+  return { inputs: formResult.values, nextState: formResult.state };
+}
+
+function profileRuntimeInputs(profile: ApiProfile): Record<string, FlowInputValue> {
   return {
-    profileID: run?.profile_id ?? profile.id,
-    profileName: run?.name ?? profile.name,
-    profileProxy: run?.proxy ?? '',
+    profileID: profile.id,
+    profileId: profile.id,
+    profileName: profile.name,
+    profileProxy: profile.proxy ?? '',
   };
+}
+
+function hasExecutableNodes(block: GscriptBlockNode): boolean {
+  return block.nodes.length > 0;
 }
 
 export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise<void> {
@@ -40,10 +71,10 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
 
   if (options.profileId) {
     try {
-      const formResult = await runFlowInputForm(inputDefinitions, options.scriptInputs ?? {}, currentInputsState);
-      inputs = formResult.values;
-      currentInputsState = formResult.state;
-      await saveInputState(options.scriptSpec, formResult.state.values).catch((error: unknown) => logger.error(formatError(error)));
+      const resolved = await resolveInputs(options, inputDefinitions, currentInputsState);
+      inputs = resolved.inputs;
+      currentInputsState = resolved.nextState;
+      await saveInputState(options.scriptSpec, currentInputsState.values).catch((error: unknown) => logger.error(formatError(error)));
     } catch (error) {
       if (isCliBackError(error)) throw new CliBackError('Back', { inputsState: currentInputsState });
       throw error;
@@ -53,10 +84,10 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
-        const formResult = await runFlowInputForm(inputDefinitions, options.scriptInputs ?? {}, currentInputsState);
-        inputs = formResult.values;
-        currentInputsState = formResult.state;
-        await saveInputState(options.scriptSpec, formResult.state.values).catch((error: unknown) => logger.error(formatError(error)));
+        const resolved = await resolveInputs(options, inputDefinitions, currentInputsState);
+        inputs = resolved.inputs;
+        currentInputsState = resolved.nextState;
+        await saveInputState(options.scriptSpec, currentInputsState.values).catch((error: unknown) => logger.error(formatError(error)));
       } catch (error) {
         if (isCliBackError(error)) throw new CliBackError('Back', { inputsState: currentInputsState });
         throw error;
@@ -80,17 +111,19 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     }
   }
 
-  inputs = { ...inputs!, ...profileRuntimeInputs(profile!) };
+  profile = await donut.getProfile(profile!.id);
+  inputs = { ...inputs!, ...profileRuntimeInputs(profile) };
   let args: Record<string, string> = stringifyInputValues(inputs);
   clearScreen();
-  logger.info(`  Profile: ${profile!.name}`);
+  logger.info(`  Profile: ${profile.name}`);
 
   const baseCtx: GscriptExecutionContext = {
-    profile: profile!,
+    profile,
     inputs,
     args,
     log,
     sleep: (ms) => sleep(ms, signal),
+    minimalLog: options.minimalLog,
   };
 
   let run: RunProfileResponse | undefined;
@@ -104,11 +137,12 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     const beforeSignal = await executeGscriptBlock(baseCtx, program.beforeInit);
     if (beforeSignal && beforeSignal !== 'stop') throw new Error(`${beforeSignal} used outside a loop.`);
 
-    if (beforeSignal !== 'stop') {
+    const shouldLaunchProfile = beforeSignal !== 'stop' && hasExecutableNodes(program.mainLogic);
+    if (shouldLaunchProfile) {
       const session = await launchProfileWithRetry({
         donut,
         cleanupDonut: new DonutApiClient(options.apiBaseUrl, options.apiToken),
-        profileId: profile!.id,
+        profileId: profile.id,
         headless: options.headless,
         bidiConnectTimeoutMs: options.bidiConnectTimeoutMs,
         bidiCommandTimeoutMs: options.bidiCommandTimeoutMs,
@@ -119,10 +153,6 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       page = session.page;
       launched = true;
 
-      inputs = { ...inputs, ...profileRuntimeInputs(profile!, run) };
-      args = stringifyInputValues(inputs);
-      baseCtx.inputs = inputs;
-      baseCtx.args = args;
       baseCtx.run = run;
       baseCtx.bidi = bidi;
       baseCtx.page = page;
@@ -131,6 +161,8 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       const signalResult = await executeGscriptBlock(baseCtx, program.mainLogic);
       if (signalResult && signalResult !== 'stop') throw new Error(`${signalResult} used outside a loop.`);
       logger.info('Done. Profile cleaned up.');
+    } else if (beforeSignal !== 'stop') {
+      logger.info('  Main logic empty, skip profile launch.');
     }
   } catch (error) {
     mainError = error;
@@ -140,7 +172,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       await bidi?.close().catch(() => {});
       if (launched) {
         const cleanupDonut = new DonutApiClient(options.apiBaseUrl, options.apiToken);
-        await cleanupDonut.killProfile(profile!.id).catch((error: unknown) => logger.error(formatError(error)));
+        await cleanupDonut.killProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
       }
 
       try {

@@ -69,9 +69,9 @@ function parseBlockNode(raw: RawGscriptNode): GscriptBlockNode {
   const kind =
     typeName.includes('ForBlockNode') ? 'for'
       : typeName.includes('WhileBlockNode') ? 'while'
-        : typeName.includes('IfBlockNode') ? 'if'
-          : typeName.includes('ElseIfBlockNode') ? 'elseif'
-            : typeName.includes('ElseBlockNode') ? 'else'
+        : typeName.includes('ElseIfBlockNode') ? 'elseif'
+          : typeName.includes('ElseBlockNode') ? 'else'
+            : typeName.includes('IfBlockNode') ? 'if'
               : typeName.includes('NormalBlockNode') ? 'normal'
                 : undefined;
   if (!kind) throw new AppError(`Unsupported GPM block type ${typeName || '(missing)'} at node ${raw.id ?? '(unknown)'}.`);

@@ -12,7 +12,7 @@ const XLSXApi = XLSX as typeof import('xlsx');
 
 export async function executeGscriptAction(ctx: GscriptExecutionContext, node: GscriptActionNode): Promise<GscriptSignal> {
   try {
-    logGscript(ctx, `action ${formatActionLabel(node, ctx)}`);
+    logGscript(ctx, ctx.minimalLog ? minimalActionLabel(node, ctx) : `action ${formatActionLabel(node, ctx)}`);
     const result = await runAction(ctx, node);
     await runActionDelay(ctx, node.delay);
     return result;
@@ -29,12 +29,14 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
     case 1:
       if (/^true$/i.test(input.ALLOW_USER_INPUT ?? '') && out && ctx.inputs[out] !== undefined) {
         logVariableSet(ctx, out, ctx.inputs[out], 'from input');
+        logMinimalVariableSet(ctx, out, ctx.inputs[out]);
         return undefined;
       }
       {
         const value = parseLiteralOrInterpolated(input.VALUE ?? '', ctx.inputs);
         setVariable(ctx.inputs, out, value);
         logVariableSet(ctx, out, value);
+        logMinimalVariableSet(ctx, out, value);
       }
       return undefined;
     case 2:
@@ -159,7 +161,11 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
       await requirePage(ctx, node).closeTab();
       return undefined;
     case 39:
-      await requirePage(ctx, node).goto(interpolate(input.URL, ctx.inputs));
+      {
+        const url = interpolate(input.URL, ctx.inputs);
+        if (ctx.minimalLog) logGscript(ctx, `url ${formatFlowValue(url)}`);
+        await requirePage(ctx, node).goto(url);
+      }
       await requirePage(ctx, node).waitForLoad();
       return undefined;
     case 41:
@@ -183,7 +189,8 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
       {
         const xpath = requireXPath(ctx, node, input);
         logGscript(ctx, `wait xpath ${formatFlowValue(xpath)} timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`);
-        await requirePage(ctx, node).waitForXPath(xpath, secondsToMs(input.TIME_OUT, ctx, 10));
+        const found = await requirePage(ctx, node).waitForXPath(xpath, secondsToMs(input.TIME_OUT, ctx, 10));
+        if (!found) logGscript(ctx, `wait xpath skipped node=${node.id}`);
       }
       return undefined;
     case 45:
@@ -245,10 +252,11 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
     case 68:
       {
         const code = interpolate(input.FILE_OR_CODE, ctx.inputs);
-        logGscript(ctx, `executeJs code=${formatFlowValue(previewText(code))}`);
+        if (!ctx.minimalLog) logGscript(ctx, `executeJs code=${formatFlowValue(previewText(code))}`);
         const value = await requirePage(ctx, node).executeJs<FlowInputValue>(code);
         setVariable(ctx.inputs, out, value);
         logVariableSet(ctx, out, value);
+        logMinimalVariableSet(ctx, out, value);
       }
       return undefined;
     case 71:
@@ -356,7 +364,6 @@ async function httpRequest(input: Record<string, string>, ctx: GscriptExecutionC
   const response = await fetch(url, { method, headers, body });
   const responseText = await response.text();
   logGscript(ctx, `httpRequest response status=${response.status} ok=${response.ok} body=${formatFlowValue(previewText(responseText))}`);
-  if (!response.ok) throw new AppError(`HTTP request failed (${response.status}) in ${actionLabel(node)}.`);
   return responseText;
 }
 
@@ -534,6 +541,12 @@ function actionLabel(node: GscriptActionNode): string {
   return `${node.comment ?? `type ${node.actionType}`} (type ${node.actionType}, node ${node.id})`;
 }
 
+function minimalActionLabel(node: GscriptActionNode, ctx: GscriptExecutionContext): string {
+  const comment = node.comment?.trim();
+  const type = formatActionType(node, ctx);
+  return comment ? `${type} - ${comment}` : type;
+}
+
 function formatActionLabel(node: GscriptActionNode, ctx: GscriptExecutionContext): string {
   const parts = [`type=${formatActionType(node, ctx)}`];
   parts.push(...formatActionDetails(node, ctx));
@@ -544,9 +557,15 @@ function formatActionLabel(node: GscriptActionNode, ctx: GscriptExecutionContext
 }
 
 function logVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: FlowInputValue, source?: string): void {
+  if (ctx.minimalLog) return;
   if (!name) return;
   const suffix = source ? ` (${source})` : '';
   logGscript(ctx, `set ${name} = ${formatFlowValue(value)}${suffix}`);
+}
+
+function logMinimalVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: FlowInputValue): void {
+  if (!ctx.minimalLog || !name) return;
+  logGscript(ctx, `set ${name} = ${formatFlowValue(value)}`);
 }
 
 function formatActionType(node: GscriptActionNode, ctx: GscriptExecutionContext): string {

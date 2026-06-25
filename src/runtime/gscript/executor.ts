@@ -1,6 +1,6 @@
 import { AppError } from '../../utils/errors.js';
 import { executeGscriptAction } from './actions.js';
-import { BLOCK_SEPARATOR, formatBlockTitle, logGscript } from './logging.js';
+import { formatBlockTitle, logGscript } from './logging.js';
 import { evaluateCondition } from './expressions.js';
 import type { GscriptActionNode, GscriptBlockNode, GscriptExecutionContext, GscriptNode, GscriptSignal } from './types.js';
 import { asNumber, parseLiteralOrInterpolated, setVariable } from './values.js';
@@ -58,9 +58,9 @@ async function executeForWithLogs(ctx: GscriptExecutionContext, block: GscriptBl
     ctx,
     formatForStartLabel(block, start, end, step),
     async () => {
-      for (let i = start; step >= 0 ? i < end : i > end; i += step) {
+  for (let i = start; step >= 0 ? i < end : i > end; i += step) {
         setVariable(ctx.inputs, 'loopIndex', i);
-        logGscript(ctx, `for iteration loopIndex=${i}`);
+        if (!ctx.minimalLog) logGscript(ctx, `for iteration loopIndex=${i}`);
         const signal = await executeNodes(ctx, block.nodes);
         if (signal === 'next') continue;
         if (signal === 'exit') return undefined;
@@ -75,7 +75,7 @@ async function executeWhile(ctx: GscriptExecutionContext, block: GscriptBlockNod
   for (let iteration = 0; iteration < MAX_WHILE_ITERATIONS; iteration += 1) {
     const matches = await evaluateCondition(block.rawInput.CONDITION, ctx);
     if (!matches) return undefined;
-    logGscript(ctx, `while iteration=${iteration}`);
+    if (!ctx.minimalLog) logGscript(ctx, `while iteration=${iteration}`);
     const signal = await executeNodes(ctx, block.nodes);
     if (signal === 'next') continue;
     if (signal === 'exit') return undefined;
@@ -90,7 +90,9 @@ async function executeIfChain(ctx: GscriptExecutionContext, nodes: GscriptNode[]
   let signal: GscriptSignal;
   while (index < nodes.length) {
     const node = nodes[index];
-    if (!node || node.kind === 'action' || (node.kind !== 'if' && node.kind !== 'elseif' && node.kind !== 'else')) break;
+    if (!node) break;
+    if (index > startIndex && node.kind === 'if') break;
+    if (node.kind === 'action' || (node.kind !== 'if' && node.kind !== 'elseif' && node.kind !== 'else')) break;
     if (!executed) {
       const matches = node.kind === 'else' || await evaluateCondition(node.rawInput.CONDITION, ctx);
       if (matches) {
@@ -112,15 +114,13 @@ async function executeLoggedBlock(
   startLabel: string,
   runner: () => Promise<GscriptSignal>
 ): Promise<GscriptSignal> {
-  ctx.log(BLOCK_SEPARATOR);
   logGscript(ctx, startLabel);
-  ctx.log(BLOCK_SEPARATOR);
   try {
     return await runner();
   } finally {
-    ctx.log(BLOCK_SEPARATOR);
-    logGscript(ctx, formatBlockTitle(`End ${startLabel}`));
-    ctx.log(BLOCK_SEPARATOR);
+    if (!ctx.minimalLog) {
+      logGscript(ctx, formatBlockTitle(`End ${startLabel}`));
+    }
   }
 }
 

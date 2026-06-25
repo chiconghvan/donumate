@@ -30,6 +30,7 @@ type CliOptions = {
   scriptBuilder?: boolean | string;
   input?: string[];
   updateCheck?: boolean;
+  minimalLog?: boolean;
 };
 
 function collectInput(value: string, previous: string[]): string[] {
@@ -73,8 +74,11 @@ function addCommonOptions(cmd: Command): Command {
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
     .option('--script-builder [path]', 'Launch visual .flow script builder, optionally opening a script')
     .option('--input <key=value>', 'Set workflow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
+    .option('--minimal-log', 'Show minimal runtime logs')
     .option('--no-update-check', 'Skip checking GitHub releases for updates');
 }
+
+// Program-level options (empty — subcommands define their own to avoid commander v13 parent-child conflict)
 
 // Register global SIGINT handler
 initAbortHandler();
@@ -129,6 +133,7 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
       bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
       scriptSpec: selectedScript,
       scriptInputs: parseInputOverrides(options.input),
+      minimalLog: options.minimalLog,
       signal: globalAbort.signal,
       initialInputsState: savedInputsState,
       initialProfileId: lastSelectedProfileId,
@@ -197,6 +202,7 @@ async function handleGscriptAction(options: CliOptions): Promise<void> {
       bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
       scriptSpec: options.script,
       scriptInputs: parseInputOverrides(options.input),
+      minimalLog: options.minimalLog,
       signal: globalAbort.signal,
     });
   } catch (error) {
@@ -231,7 +237,7 @@ async function handleCheckAction(options: CheckOptions): Promise<void> {
 }
 
 // Interactive: choose script, then profile.
-addCommonOptions(program).action((options) => handleAction(options));
+program.action((options) => handleAction(options));
 
 // Generic run command
 addCommonOptions(

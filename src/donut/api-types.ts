@@ -5,6 +5,7 @@ export const apiProfileSchema = z.object({
   name: z.string(),
   browser: z.string(),
   version: z.string().optional(),
+  proxy: z.string().nullable().optional(),
   process_id: z.number().nullable().optional(),
   is_running: z.boolean().optional(),
   camoufox_config: z.unknown().optional(),
@@ -29,6 +30,7 @@ export type ApiProfile = {
   name: string;
   browser: string;
   version: string;
+  proxy?: string | null;
   process_id?: number | null;
   is_running?: boolean;
   camoufox_config?: unknown;
