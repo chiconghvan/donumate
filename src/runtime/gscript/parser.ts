@@ -1,7 +1,7 @@
 import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 import { AppError } from '../../utils/errors.js';
-import type { FlowInputDefinition } from '../dsl/types.js';
+import type { InputDefinition } from '../input-types.js';
 import type { GscriptActionNode, GscriptBlockNode, GscriptInputDefinition, GscriptNode, GscriptProgram, GscriptRawInput } from './types.js';
 
 const SUPPORTED_ACTION_TYPES = new Set([
@@ -47,7 +47,7 @@ export async function loadGscriptProgram(scriptPath: string): Promise<GscriptPro
   return { beforeInit, mainLogic, afterQuit, inputs };
 }
 
-export function toFlowInputDefinitions(inputs: GscriptInputDefinition[]): FlowInputDefinition[] {
+export function toInputDefinitions(inputs: GscriptInputDefinition[]): InputDefinition[] {
   return inputs.map((input) => ({ ...input }));
 }
 

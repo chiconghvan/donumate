@@ -1,20 +1,18 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
 import XLSX from 'xlsx';
-import { AppError } from '../../utils/errors.js';
-import type { FlowInputDefinition, FlowInputValue } from './types.js';
+import { AppError } from '../utils/errors.js';
+import type { InputDefinition, InputOverrides, InputValue } from './input-types.js';
 
 const XLSXApi = XLSX as typeof import('xlsx');
 
 const NUMBER_PATTERN = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
-export type FlowInputOverrides = Record<string, string>;
-
-export function stringifyInputValues(values: Record<string, FlowInputValue>): Record<string, string> {
+export function stringifyInputValues(values: Record<string, InputValue>): Record<string, string> {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)]));
 }
 
-export function initialInputText(input: FlowInputDefinition, overrides: FlowInputOverrides): string {
+export function initialInputText(input: InputDefinition, overrides: InputOverrides): string {
   if (overrides[input.name] !== undefined) return overrides[input.name];
   if (input.defaultValue !== undefined) return String(input.defaultValue);
   if (input.type === 'checkbox') return 'false';
@@ -23,10 +21,10 @@ export function initialInputText(input: FlowInputDefinition, overrides: FlowInpu
 }
 
 export async function coerceAndValidateInputs(
-  definitions: FlowInputDefinition[],
-  rawValues: FlowInputOverrides
-): Promise<Record<string, FlowInputValue>> {
-  const values: Record<string, FlowInputValue> = {};
+  definitions: InputDefinition[],
+  rawValues: InputOverrides
+): Promise<Record<string, InputValue>> {
+  const values: Record<string, InputValue> = {};
   for (const input of definitions) {
     values[input.name] = await coerceAndValidateInput(input, rawValues[input.name] ?? initialInputText(input, {}));
     if (input.type === 'inputExcelFile') {
@@ -37,7 +35,7 @@ export async function coerceAndValidateInputs(
   return values;
 }
 
-export async function coerceAndValidateInput(input: FlowInputDefinition, rawValue: string): Promise<FlowInputValue> {
+export async function coerceAndValidateInput(input: InputDefinition, rawValue: string): Promise<InputValue> {
   const value = rawValue.trim();
   switch (input.type) {
     case 'input':

@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { loadConfig } from './config/load-config.js';
-import { createFlowScript } from './runtime/create-flow-script.js';
-import { checkFlowSource, formatFlowDiagnostic } from './runtime/dsl/checker.js';
-import { clearScreen, runWorkflow, type RunnerOptions } from './runtime/runner.js';
-import { runGscriptWorkflow } from './runtime/gscript/runner.js';
-import { selectScript } from './runtime/script-loader.js';
-import { launchScriptBuilder } from './script-builder/launch.js';
+import { runGscriptWorkflow, type GscriptRunnerOptions } from './runtime/gscript/runner.js';
+import { selectGscript } from './runtime/gscript/script-selector.js';
 import { getUi } from './ui/ui-provider.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
@@ -16,7 +12,7 @@ const program = new Command();
 
 program
   .name('donumate')
-  .description('Launch Donut Camoufox profiles and automate them over WebDriver BiDi')
+  .description('Launch Donut browser profiles and automate them with GPM Automate .gscript files over WebDriver BiDi')
   .version(CURRENT_VERSION);
 
 type CliOptions = {
@@ -27,11 +23,12 @@ type CliOptions = {
   connectTimeout?: string;
   commandTimeout?: string;
   script?: string;
-  scriptBuilder?: boolean | string;
   input?: string[];
   updateCheck?: boolean;
   minimalLog?: boolean;
 };
+
+type RootAction = 'run-scripts' | 'exit';
 
 function collectInput(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -47,23 +44,18 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
   return overrides;
 }
 
-type RootAction = 'run-scripts' | 'create-flow' | 'exit';
-type CheckOptions = CliOptions & { script?: string };
-
 async function selectRootAction(): Promise<RootAction | undefined> {
   const ui = await getUi();
   return ui.runListPicker<RootAction>({
     title: 'Donumate',
     options: [
       { label: 'Run Scripts', value: 'run-scripts' },
-      { label: 'Create flow script', value: 'create-flow' },
       { label: 'Exit', value: 'exit' },
     ],
     cancelHint: 'exit',
   });
 }
 
-// Shared options helper
 function addCommonOptions(cmd: Command): Command {
   return cmd
     .option('--api <url>', 'Donut API base URL (default: http://127.0.0.1:10108)')
@@ -72,18 +64,15 @@ function addCommonOptions(cmd: Command): Command {
     .option('--headless', 'Launch profile headless')
     .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
-    .option('--script-builder [path]', 'Launch visual .flow script builder, optionally opening a script')
-    .option('--input <key=value>', 'Set workflow input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
+    .option('--script <path>', 'GPM Automate .gscript path')
+    .option('--input <key=value>', 'Set script input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
     .option('--minimal-log', 'Show minimal runtime logs')
     .option('--no-update-check', 'Skip checking GitHub releases for updates');
 }
 
-// Program-level options (empty — subcommands define their own to avoid commander v13 parent-child conflict)
-
-// Register global SIGINT handler
 initAbortHandler();
 
-async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise<void> {
+async function runWithOptions(options: CliOptions): Promise<void> {
   const config = loadConfig({
     api: options.api,
     token: options.token,
@@ -95,12 +84,11 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
 
   await maybeRunUpdateCheck({ currentVersion: CURRENT_VERSION, updateCheck: options.updateCheck });
 
-  const fixedScript = scriptSpec ?? options.script;
+  const fixedScript = options.script;
   let lastSelectedScript: string | undefined = undefined;
   let savedInputsState: { values: Record<string, string>; cursor: number } | undefined = undefined;
   let lastSelectedProfileId: string | undefined = undefined;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     let selectedScript: string;
     try {
@@ -109,12 +97,7 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
       } else {
         const rootAction = await selectRootAction();
         if (rootAction === undefined || rootAction === 'exit') return;
-        if (rootAction === 'create-flow') {
-          const createdScript = await createFlowScript();
-          if (createdScript) console.log(`Created ${createdScript}`);
-          continue;
-        }
-        selectedScript = await selectScript(lastSelectedScript);
+        selectedScript = await selectGscript(lastSelectedScript);
       }
       lastSelectedScript = selectedScript;
     } catch (error) {
@@ -124,7 +107,7 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
       throw error;
     }
 
-    const runnerOptions: RunnerOptions = {
+    const runnerOptions: GscriptRunnerOptions = {
       apiBaseUrl: config.apiBaseUrl,
       apiToken: config.apiToken,
       profileId: config.profileId,
@@ -140,7 +123,7 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
     };
 
     try {
-      await runWorkflow(runnerOptions);
+      await runGscriptWorkflow(runnerOptions);
       return;
     } catch (error) {
       if (isCliBackError(error)) {
@@ -161,14 +144,9 @@ async function runWithOptions(options: CliOptions, scriptSpec?: string): Promise
   }
 }
 
-async function handleAction(options: CliOptions, scriptSpec?: string): Promise<void> {
+async function handleAction(options: CliOptions): Promise<void> {
   try {
-    if (options.scriptBuilder !== undefined) {
-      const initialPath = typeof options.scriptBuilder === 'string' ? options.scriptBuilder : options.script ?? scriptSpec;
-      await launchScriptBuilder({ initialPath, signal: globalAbort.signal });
-      return;
-    }
-    await runWithOptions(options, scriptSpec);
+    await runWithOptions(options);
   } catch (error) {
     if (isCliBackError(error)) return;
     if (globalAbort.signal.aborted) {
@@ -181,90 +159,12 @@ async function handleAction(options: CliOptions, scriptSpec?: string): Promise<v
   }
 }
 
-async function handleGscriptAction(options: CliOptions): Promise<void> {
-  try {
-    if (!options.script) throw new AppError('--script is required.');
-    const config = loadConfig({
-      api: options.api,
-      token: options.token,
-      profile: options.profile,
-      headless: options.headless,
-      connectTimeout: options.connectTimeout,
-      commandTimeout: options.commandTimeout,
-    });
-    await maybeRunUpdateCheck({ currentVersion: CURRENT_VERSION, updateCheck: options.updateCheck });
-    await runGscriptWorkflow({
-      apiBaseUrl: config.apiBaseUrl,
-      apiToken: config.apiToken,
-      profileId: config.profileId,
-      headless: config.headless,
-      bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
-      bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
-      scriptSpec: options.script,
-      scriptInputs: parseInputOverrides(options.input),
-      minimalLog: options.minimalLog,
-      signal: globalAbort.signal,
-    });
-  } catch (error) {
-    if (isCliBackError(error)) return;
-    if (globalAbort.signal.aborted) {
-      process.exitCode = 130;
-      return;
-    }
-    console.error(formatError(error));
-    console.error('elifecycle command failed with exit code 1');
-    process.exitCode = 1;
-  }
-}
+addCommonOptions(program).action((options) => handleAction(options));
 
-async function handleCheckAction(options: CheckOptions): Promise<void> {
-  const script = options.script;
-  if (!script) throw new AppError('--script is required.');
-  const fs = await import('fs/promises');
-  const source = await fs.readFile(script, 'utf8');
-  const result = checkFlowSource(source, script);
-  for (const diagnostic of result.diagnostics) {
-    console.error(formatFlowDiagnostic(diagnostic, source));
-  }
-  const errorCount = result.diagnostics.filter((item) => item.severity === 'error').length;
-  const warningCount = result.diagnostics.filter((item) => item.severity === 'warning').length;
-  if (errorCount === 0 && warningCount === 0) {
-    console.log('Check complete. No failures found.');
-  } else {
-    console.log(`Check complete. ${errorCount} error(s), ${warningCount} warning(s).`);
-  }
-  process.exitCode = errorCount > 0 ? 1 : 0;
-}
-
-// Interactive: choose script, then profile.
-program.action((options) => handleAction(options));
-
-// Generic run command
 addCommonOptions(
   program
     .command('run')
-    .description('Run a workflow script against a Camoufox profile')
-    .option('--script <path-or-name>', 'Script path or built-in name (e.g. threads, ./scripts/my-task.ts)')
-).action((options) => handleAction(options));
-
-// Built-in threads command
-addCommonOptions(
-  program
-    .command('threads')
-    .description('Built-in Threads workflow')
-).action((options) => handleAction(options, 'threads'));
-
-addCommonOptions(
-  program
-    .command('gscript')
     .description('Run a GPM Automate .gscript workflow')
-    .requiredOption('--script <path>', 'GPM Automate .gscript path')
-).action((options) => handleGscriptAction(options));
-
-program
-  .command('check')
-  .description('Check a .flow script without launching browser')
-  .requiredOption('--script <path>', 'Flow script path')
-  .action((options) => handleCheckAction(options));
+).action((options) => handleAction(options));
 
 program.parseAsync();

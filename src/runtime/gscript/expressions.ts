@@ -1,4 +1,4 @@
-import type { FlowInputValue } from '../types.js';
+import type { InputValue } from '../input-types.js';
 import type { GscriptExecutionContext } from './types.js';
 import { asNumber, interpolate, resolveToken, stringifyValue } from './values.js';
 
@@ -84,7 +84,7 @@ function splitComparison(source: string): { left: string; operator: '=' | '!=' |
   return { left: match[1] ?? '', operator: match[2] as '=' | '!=' | '>' | '<' | '>=' | '<=', right: match[3] ?? '' };
 }
 
-function readValue(source: string, vars: Record<string, FlowInputValue>): FlowInputValue {
+function readValue(source: string, vars: Record<string, InputValue>): InputValue {
   const trimmed = source.trim();
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     return trimmed.slice(1, -1);
@@ -92,7 +92,7 @@ function readValue(source: string, vars: Record<string, FlowInputValue>): FlowIn
   return resolveToken(trimmed, vars);
 }
 
-function normalizeComparable(value: FlowInputValue): string | number | boolean {
+function normalizeComparable(value: InputValue): string | number | boolean {
   if (typeof value === 'boolean' || typeof value === 'number') return value;
   const text = stringifyValue(value).trim();
   if (/^(true|false)$/i.test(text)) return /^true$/i.test(text);

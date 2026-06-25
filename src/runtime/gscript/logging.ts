@@ -1,4 +1,4 @@
-import type { FlowInputValue } from '../types.js';
+import type { InputValue } from '../input-types.js';
 
 export const BLOCK_SEPARATOR = '==============';
 
@@ -18,7 +18,7 @@ export function formatBlockTitle(label: string, comment?: string | null): string
   return comment?.trim() ? `${label} - ${comment.trim()}` : label;
 }
 
-export function formatFlowValue(value: FlowInputValue | unknown, maxLength = 180): string {
+export function formatInputValue(value: InputValue | unknown, maxLength = 180): string {
   if (typeof value === 'string') return JSON.stringify(truncate(value, maxLength));
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return JSON.stringify(value);
   if (Array.isArray(value)) {

@@ -1,4 +1,4 @@
-import type { UiProvider, ListPickerArgs, TextInputArgs, UpdateInfo, UpdateChoice, FlowScriptEditorArgs } from './ui-types.js';
+import type { UiProvider, ListPickerArgs, TextInputArgs, UpdateInfo, UpdateChoice } from './ui-types.js';
 import * as readline from 'readline';
 
 function createReadlineInterface(): readline.Interface {
@@ -90,20 +90,8 @@ async function readlineUpdatePrompt(update: UpdateInfo): Promise<UpdateChoice | 
   }
 }
 
-async function readlineFlowScriptEditor(args: FlowScriptEditorArgs): Promise<string | undefined> {
-  const { filePath, initialSource } = args;
-
-  console.log(`\nCreate flow script: ${filePath}`);
-  console.log('Flow script editor is not available in headless mode.');
-  console.log('Please edit the file manually after creation.\n');
-
-  // Return the initial template for now
-  return initialSource;
-}
-
 export const readlineUi: UiProvider = {
   runListPicker: readlineListPicker,
   runTextInputPrompt: readlineTextInput,
   runUpdatePrompt: readlineUpdatePrompt,
-  runFlowScriptEditor: readlineFlowScriptEditor,
 };

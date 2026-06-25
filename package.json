@@ -1,7 +1,7 @@
 {
   "name": "donumate",
-  "version": "0.2.0",
-  "description": "Standalone CLI for launching Donut Camoufox profiles and automating them over WebDriver BiDi.",
+  "version": "0.3.0",
+  "description": "Standalone CLI for launching Donut browser profiles and automating GPM .gscript workflows over WebDriver BiDi.",
   "type": "module",
   "bin": {
     "donumate": "./dist/cli.js"
@@ -21,8 +21,7 @@
       "dist/cli.js"
     ],
     "assets": [
-      "node_modules/.pnpm/yoga-layout@3.2.1/node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js",
-      "dist-exe/script-builder/web/**/*"
+      "node_modules/.pnpm/yoga-layout@3.2.1/node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js"
     ],
     "targets": [
       "node22-win-x64"
@@ -30,14 +29,12 @@
     "outputPath": "release"
   },
   "dependencies": {
-    "@xyflow/react": "^12.11.1",
     "commander": "^13.1.0",
     "dotenv": "^16.4.7",
     "esbuild": "^0.28.1",
     "ink": "^5.2.1",
-    "lucide-react": "^1.21.0",
+    "playwright-core": "^1.61.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "ws": "^8.18.0",
     "xlsx": "^0.18.5",
     "zod": "^3.24.2"
@@ -45,7 +42,6 @@
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.14",
     "cross-env": "^7.0.3",
     "tsup": "^8.5.1",

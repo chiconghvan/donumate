@@ -1,39 +1,39 @@
 import { AppError, CliBackError } from '../utils/errors.js';
-import { coerceAndValidateInputs, initialInputText, type FlowInputOverrides } from '../runtime/dsl/input-values.js';
-import type { FlowInputDefinition, FlowInputValue } from '../runtime/dsl/types.js';
+import { coerceAndValidateInputs, initialInputText } from '../runtime/input-values.js';
+import type { InputDefinition, InputOverrides, InputValue } from '../runtime/input-types.js';
 import { runListPicker, type ListPickerOption } from './list-picker.js';
 import { runTextInputPrompt } from './text-input-prompt.js';
 import { browsePath } from './path-browser.js';
 
-export type FlowInputFormResult = {
-  values: Record<string, FlowInputValue>;
+export type InputFormResult = {
+  values: Record<string, InputValue>;
   state: { values: Record<string, string>; cursor: number };
 };
 
 const SCRIPT_SETTING_NAMES = new Set(['hardless', 'threads', 'inputExcelFile', 'mapProfileName', 'windowWidth', 'windowHeight']);
 const SCRIPT_SETTING_LABELS: Record<string, string> = {
-  hardless: 'Không cửa sổ (hardless)',
-  threads: 'Số luồng cùng lúc (threads)',
-  inputExcelFile: 'File excel đầu vào (inputExcelFile)',
+  hardless: 'Khong cua so (hardless)',
+  threads: 'So luong cung luc (threads)',
+  inputExcelFile: 'File excel dau vao (inputExcelFile)',
   mapProfileName: 'Map profile name (mapProfileName)',
-  windowWidth: 'Rộng window (windowWidth)',
+  windowWidth: 'Rong window (windowWidth)',
   windowHeight: 'Cao window (windowHeight)',
 };
 
-function displayInputValue(def: FlowInputDefinition, value: string): string {
+function displayInputValue(def: InputDefinition, value: string): string {
   if (def.type === 'checkbox') {
     return /^(true|1|yes|on)$/i.test(value) ? 'true' : 'false';
   }
-  if (def.type === 'inputExcelFile' && value === '') return 'không có';
+  if (def.type === 'inputExcelFile' && value === '') return 'none';
   return value || '<empty>';
 }
 
-function displayInputLabel(def: FlowInputDefinition, value: string): string {
+function displayInputLabel(def: InputDefinition, value: string): string {
   const label = SCRIPT_SETTING_LABELS[def.name] ?? `${def.name} (${def.type})`;
   return `${label} = ${displayInputValue(def, value)}`;
 }
 
-async function editFlowInput(def: FlowInputDefinition, currentVal: string): Promise<string> {
+async function editInput(def: InputDefinition, currentVal: string): Promise<string> {
   if (def.type === 'checkbox') {
     const res = await runListPicker({
       title: `Set ${def.name}`,
@@ -64,7 +64,7 @@ async function editFlowInput(def: FlowInputDefinition, currentVal: string): Prom
       options: [
         { value: 'browse', label: 'Browse file' },
         { value: 'manual', label: 'Enter path manually' },
-        { value: 'clear', label: 'Không có file' },
+        { value: 'clear', label: 'No file' },
       ],
       initialValue: currentVal ? 'browse' : 'clear',
       cancelHint: 'keep current',
@@ -101,22 +101,22 @@ async function editFlowInput(def: FlowInputDefinition, currentVal: string): Prom
 }
 
 function createInputChoices(
-  definitions: FlowInputDefinition[],
+  definitions: InputDefinition[],
   values: Record<string, string>,
   settingsExpanded: boolean
 ): ListPickerOption<string>[] {
   const settingDefs = definitions.filter((def) => SCRIPT_SETTING_NAMES.has(def.name));
   const userDefs = definitions.filter((def) => !SCRIPT_SETTING_NAMES.has(def.name));
   const choices: ListPickerOption<string>[] = [
-    { value: '__submit__', label: 'Run flow' },
+    { value: '__submit__', label: 'Run script' },
   ];
 
   if (settingDefs.length > 0) {
-    choices.push({ value: '__settings__', label: `${settingsExpanded ? '▾' : '▸'} Scripts Setting` });
+    choices.push({ value: '__settings__', label: `${settingsExpanded ? 'v' : '>'} Script Settings` });
     if (settingsExpanded) {
       choices.push(...settingDefs.map((def) => ({
         value: def.name,
-        label: `  ├─ ${displayInputLabel(def, values[def.name] || '')}`,
+        label: `  - ${displayInputLabel(def, values[def.name] || '')}`,
       })));
     }
   }
@@ -129,17 +129,17 @@ function createInputChoices(
   return choices;
 }
 
-export async function runFlowInputForm(
-  definitions: FlowInputDefinition[],
-  overrides: FlowInputOverrides,
+export async function runInputForm(
+  definitions: InputDefinition[],
+  overrides: InputOverrides,
   initialState?: { values?: Record<string, string>; cursor?: number }
-): Promise<FlowInputFormResult> {
+): Promise<InputFormResult> {
   if (definitions.length === 0) return { values: {}, state: { values: {}, cursor: 0 } };
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     const missing = definitions.filter((d) => !overrides[d.name] && d.defaultValue === undefined && (d.type === 'file' || d.type === 'folder'));
     if (missing.length > 0) {
-      process.stderr.write(`Warning: non-TTY mode — required fields not set: ${missing.map((d) => d.name).join(', ')}\n`);
+      process.stderr.write(`Warning: non-TTY mode - required fields not set: ${missing.map((d) => d.name).join(', ')}\n`);
     }
     const validated = await coerceAndValidateInputs(definitions, Object.fromEntries(definitions.map((item) => [item.name, initialInputText(item, overrides)])));
     return { values: validated, state: { values: {}, cursor: 0 } };
@@ -158,8 +158,8 @@ export async function runFlowInputForm(
     if (cursor >= choices.length) cursor = choices.length - 1;
 
     const title = validationError
-      ? `Flow Inputs Form\n\nValidation Error: ${validationError}\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.`
-      : 'Flow Inputs Form\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.';
+      ? `Script Inputs\n\nValidation Error: ${validationError}\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.`
+      : 'Script Inputs\n\nEnter opens/toggles selected item. Direct picker opens for checkbox/comboBox/file/folder.';
     const selection = await runListPicker({
       title,
       options: choices,
@@ -199,6 +199,6 @@ export async function runFlowInputForm(
     if (!def) throw new AppError(`Unknown input: ${selection}`);
 
     const currentValue = values[def.name] ?? '';
-    values[def.name] = await editFlowInput(def, currentValue);
+    values[def.name] = await editInput(def, currentValue);
   }
 }

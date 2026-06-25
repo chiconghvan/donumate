@@ -1,27 +1,20 @@
 import type { BidiClient } from '../bidi/bidi-client.js';
 import type { ApiProfile, RunProfileResponse } from '../donut/api-types.js';
-import type { PageAutomation } from './page-automation.js';
-import type { FlowInputValue } from './dsl/types.js';
+import type { BrowserPageAutomation } from './page-automation-types.js';
+import type { InputValue } from './input-types.js';
+import type { Browser } from 'playwright-core';
 
-export type { FlowInputValue };
+export type { InputValue };
 
-export type WorkflowContext = {
-  /** Donut profile info */
+export type AutomationContext = {
   profile: ApiProfile;
-  /** Launch response (debugging port, headless, etc.) */
   run: RunProfileResponse;
-  /** High-level page automation */
-  page: PageAutomation;
-  /** Raw BiDi client for advanced use */
-  bidi: BidiClient;
-  /** Structured log output */
+  runtime: 'bidi' | 'playwright';
+  page: BrowserPageAutomation;
+  bidi?: BidiClient;
+  playwrightBrowser?: Browser;
   log: (...args: unknown[]) => void;
-  /** Sleep helper */
   sleep: (ms: number) => Promise<void>;
-  /** Flow/CLI input values */
-  inputs: Record<string, FlowInputValue>;
-  /** CLI script arguments (--input key=value), stringified for compatibility */
+  inputs: Record<string, InputValue>;
   args: Record<string, string>;
 };
-
-export type WorkflowScript = (ctx: WorkflowContext) => Promise<void> | void;

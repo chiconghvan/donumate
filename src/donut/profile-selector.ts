@@ -3,30 +3,37 @@ import { globalAbort } from '../utils/abort.js';
 import { getUi } from '../ui/ui-provider.js';
 import type { ApiProfile } from './api-types.js';
 
-export function camoufoxProfiles(profiles: ApiProfile[]): ApiProfile[] {
-  return profiles.filter((profile) => profile.browser === 'camoufox');
+const SUPPORTED_BROWSER_TYPES = new Set(['camoufox', 'weyfern', 'wayfern']);
+
+export function runnableBrowserProfiles(profiles: ApiProfile[]): ApiProfile[] {
+  return profiles.filter((profile) => SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase()));
 }
 
-export async function selectCamoufoxProfile(profiles: ApiProfile[], defaultProfileId?: string): Promise<ApiProfile> {
+function profileBrowserLabel(profile: ApiProfile): string {
+  const browser = profile.browser.toLowerCase();
+  return browser === 'wayfern' ? 'weyfern' : browser;
+}
+
+export async function selectRunnableBrowserProfile(profiles: ApiProfile[], defaultProfileId?: string): Promise<ApiProfile> {
   if (process.stdin.isTTY) {
     process.stdin.resume();
   }
-  const choices = camoufoxProfiles(profiles);
+  const choices = runnableBrowserProfiles(profiles);
   if (choices.length === 0) {
-    throw new AppError('No Camoufox profiles found. Create one in Donut Browser or check API at http://127.0.0.1:10108');
+    throw new AppError('No Camoufox/Weyfern profiles found. Create one in Donut Browser or check API at http://127.0.0.1:10108');
   }
 
   const selectChoices = [
     { label: 'Back', value: '__back__' },
     ...choices.map((profile) => ({
-      label: `${profile.is_running ? '[Running]' : '[Stopped]'} ${profile.name} (${profile.version ?? '?'})`,
+      label: `${profile.name} | ${profileBrowserLabel(profile)}`,
       value: profile.id,
     })),
   ];
 
   const ui = await getUi();
   const selectedVal = await ui.runListPicker({
-    title: `Select Camoufox profile (${choices.length} found)`,
+    title: `Select browser profile (${choices.length} found)`,
     options: selectChoices,
     initialValue: defaultProfileId ?? '__back__',
   });
@@ -43,9 +50,9 @@ export async function selectCamoufoxProfile(profiles: ApiProfile[], defaultProfi
 export function findProfileOrThrow(profiles: ApiProfile[], profileId: string): ApiProfile {
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) {
-    const available = profiles.filter((p) => p.browser === 'camoufox').map((p) => `  ${p.id} — ${p.name}`).join('\n');
-    throw new AppError(`Profile not found: ${profileId}\nAvailable Camoufox profiles:\n${available || '  (none)'}`);
+    const available = runnableBrowserProfiles(profiles).map((p) => `  ${p.id} - ${p.name} | ${profileBrowserLabel(p)}`).join('\n');
+    throw new AppError(`Profile not found: ${profileId}\nAvailable Camoufox/Weyfern profiles:\n${available || '  (none)'}`);
   }
-  if (profile.browser !== 'camoufox') throw new AppError(`Profile is not Camoufox: ${profileId} (browser=${profile.browser})`);
+  if (!SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase())) throw new AppError(`Profile is not Camoufox/Weyfern: ${profileId} (browser=${profile.browser})`);
   return profile;
 }

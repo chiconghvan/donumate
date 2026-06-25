@@ -36,7 +36,7 @@ export default defineConfig({
   splitting: false,
   clean: true,
   dts: false,
-  external: isExe ? ['xlsx'] : ['esbuild', 'react-devtools-core', 'xlsx'],
+  external: isExe ? ['playwright-core', 'xlsx'] : ['esbuild', 'playwright-core', 'react-devtools-core', 'xlsx'],
   esbuildOptions(options) {
     if (isExe) {
       options.plugins = [...(options.plugins ?? []), inkStubPlugin];

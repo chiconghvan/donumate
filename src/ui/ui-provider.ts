@@ -69,18 +69,10 @@ async function readlineUpdatePrompt(update: { currentVersion: string; latestVers
   }
 }
 
-async function readlineFlowScriptEditor(args: { filePath: string; initialSource: string }): Promise<string | undefined> {
-  console.log(`\nCreate flow script: ${args.filePath}`);
-  console.log('Flow script editor is not available in headless mode.');
-  console.log('Please edit the file manually after creation.\n');
-  return args.initialSource;
-}
-
 const readlineUi: UiProvider = {
   runListPicker: readlineListPicker,
   runTextInputPrompt: readlineTextInput,
   runUpdatePrompt: readlineUpdatePrompt,
-  runFlowScriptEditor: readlineFlowScriptEditor,
 };
 
 let _ui: UiProvider | undefined;

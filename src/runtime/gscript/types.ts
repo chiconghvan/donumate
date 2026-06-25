@@ -1,5 +1,8 @@
-import type { FlowInputValue } from '../types.js';
-import type { WorkflowContext } from '../types.js';
+import type { BidiClient } from '../../bidi/bidi-client.js';
+import type { ApiProfile, RunProfileResponse } from '../../donut/api-types.js';
+import type { BrowserPageAutomation } from '../page-automation-types.js';
+import type { InputValue } from '../input-types.js';
+import type { Browser } from 'playwright-core';
 
 export type GscriptRawInput = Record<string, string>;
 
@@ -36,13 +39,19 @@ export type GscriptProgram = {
 export type GscriptInputDefinition = {
   name: string;
   type: 'text' | 'number' | 'checkbox' | 'comboBox';
-  defaultValue?: FlowInputValue;
+  defaultValue?: InputValue;
   options?: string[];
   lineNumber: number;
 };
 
-export type GscriptExecutionContext = Partial<WorkflowContext> & {
-  inputs: Record<string, FlowInputValue>;
+export type GscriptExecutionContext = {
+  profile?: ApiProfile;
+  run?: RunProfileResponse;
+  runtime?: 'bidi' | 'playwright';
+  page?: BrowserPageAutomation;
+  bidi?: BidiClient;
+  playwrightBrowser?: Browser;
+  inputs: Record<string, InputValue>;
   args: Record<string, string>;
   log: (...args: unknown[]) => void;
   sleep: (ms: number) => Promise<void>;

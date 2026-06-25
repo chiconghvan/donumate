@@ -1,72 +1,59 @@
 # Gscript Runtime
 
-## Tổng Quan
-`gscript` là runtime riêng cho workflow `GPM Automate .gscript`, không phải `flow` DSL. CLI chạy qua lệnh:
+## Overview
+Donumate now runs GPM Automate `.gscript` workflows by default. The CLI entry points are:
 
 ```bash
-pnpm start gscript --script ./scripts/example.gscript
+pnpm start -- --script ./scripts/example.gscript
+pnpm start -- run --script ./scripts/example.gscript
 ```
 
-File `.gscript` là JSON, được đọc từ thư mục hiện tại và phải có 3 block gốc: `before_init`, `main_logic`, `after_quit`.
+Without `--script`, the interactive UI lists `.gscript` files from `./scripts/`.
 
-## Cấu Trúc Codebase
-- `src/cli.ts`: khai báo command `gscript` và chuyển vào `runGscriptWorkflow()`.
-- `src/runtime/gscript/parser.ts`: đọc JSON, parse node cây, trích input, báo lỗi khi thiếu block hoặc gặp kiểu node không hỗ trợ.
-- `src/runtime/gscript/runner.ts`: điều phối input, chọn profile, launch Donut profile, tạo context và chạy 3 pha workflow.
-- `src/runtime/gscript/executor.ts`: thực thi block, vòng lặp, điều kiện, nhánh lỗi `failed_block`, và signal `next` / `exit` / `stop`.
-- `src/runtime/gscript/actions.ts`: map action node sang thao tác thực tế trên profile, page, BiDi.
+## Runtime Layout
+- `src/cli.ts`: root and `run` commands, both dispatching to `runGscriptWorkflow()`.
+- `src/runtime/gscript/parser.ts`: reads `.gscript` JSON, parses the node tree, extracts user inputs, and validates required root blocks.
+- `src/runtime/gscript/runner.ts`: resolves inputs, selects a Camoufox/Weyfern profile, launches the browser profile, creates context, and runs the workflow phases.
+- `src/runtime/gscript/executor.ts`: executes blocks, loops, conditions, failed blocks, and `next` / `exit` / `stop` signals.
+- `src/runtime/gscript/actions.ts`: maps GPM action node types to browser, file, HTTP, Excel, cookie, and variable operations.
 
-## Logic Thực Thi
-Luồng chuẩn:
-1. Load `.gscript` và collect input từ các action `type = 1` có `ALLOW_USER_INPUT = true`.
-2. Hiển thị form input và lưu state vào bộ nhớ cục bộ để dùng lại lần sau.
-3. Chọn hoặc nhận profile Camoufox.
-4. Chạy `before_init`.
-5. Launch profile, gắn `run`, `bidi`, `page` vào execution context.
-6. Chạy `main_logic`.
-7. Luôn cleanup và chạy `after_quit`, kể cả khi có lỗi.
+## Execution Flow
+1. Load `.gscript` and collect inputs from action `type = 1` with `ALLOW_USER_INPUT = true`.
+2. Show the input form when needed and save local input state for reuse.
+3. Select or load a Camoufox/Weyfern profile.
+4. Run `before_init`.
+5. Launch the profile, then attach `run`, `bidi`, and `page` to the execution context.
+6. Run `main_logic`.
+7. Always clean up and run `after_quit`, including after failures.
 
-`while` có giới hạn an toàn `10000` vòng lặp. `failed_block` chỉ chạy khi action bật `use_failed_block`.
+`while` loops have a safety limit of `10000` iterations. A `failed_block` runs only when the action enables `use_failed_block`.
 
-## Hướng Dẫn Sử Dụng Script
-- Đặt file trong `./scripts/` hoặc truyền đường dẫn tuyệt đối/tương đối qua `--script`.
-- Script nên giữ tên rõ nghĩa, ví dụ `login.gscript`, `scrape-profile.gscript`.
-- Nếu script lỗi JSON hoặc thiếu `before_init` / `main_logic` / `after_quit`, runtime sẽ dừng sớm và in lỗi chi tiết.
+## Script Usage
+- Put files in `./scripts/` or pass an absolute/relative path with `--script`.
+- Use clear names such as `login.gscript` or `scrape-profile.gscript`.
+- Invalid JSON or missing `before_init` / `main_logic` / `after_quit` stops early with a detailed error.
 
-### Truyền Input Khi Chạy EXE
-Bản exe được build không kèm Ink TUI, nên không có form nhập tương tác. Khi chạy `release/donumate-win-x64.exe`, bạn phải truyền input bằng `--input key=value`.
-
-Ví dụ:
+## Inputs
+For non-interactive runs, pass input values with repeated `--input key=value` flags:
 
 ```bash
-donumate.exe gscript --script .\scripts\example.gscript --input username=demo --input password=secret
+donumate.exe --script .\scripts\example.gscript --input username=demo --input password=secret
 ```
 
-Quy tắc:
-- Mỗi biến là một cặp `key=value`.
-- Có thể lặp nhiều lần, cùng key thì giá trị sau cùng được dùng.
-- Giá trị có khoảng trắng cần được quote theo shell, ví dụ PowerShell: `--input query="camera lens"`.
-- Với input kiểu `checkbox`, dùng `true` hoặc `false`.
-- Với `number`, truyền số dạng text, ví dụ `--input retryCount=3`.
+Rules:
+- Each value is one `key=value` pair.
+- Repeating a key uses the last value.
+- Quote values with spaces according to your shell, for example PowerShell: `--input query="camera lens"`.
+- `checkbox` inputs accept `true` or `false`.
+- `number` inputs accept numeric text, for example `--input retryCount=3`.
 
-Trong runtime, các giá trị này được gom vào `ctx.inputs` và `ctx.args`. Script nên đọc từ đó thay vì phụ thuộc vào giao diện tương tác.
-Nếu tất cả input mà script khai báo đều đã có trong `--input`, runtime sẽ tự bỏ qua form nhập và chạy thẳng.
+Values are available in `ctx.inputs` and stringified in `ctx.args`. If every declared input is present in `--input`, the input form is skipped.
 
-## Bản Build EXE
-Build bản đóng gói Windows bằng:
+## EXE Build
+Build the Windows executable with:
 
 ```bash
 pnpm build:exe
 ```
 
-Quy trình build:
-- bundle `src/cli.ts` vào `dist-exe/cli.js`
-- copy asset của script builder sang `dist-exe/script-builder/web`
-- đóng gói ra `release/donumate-win-x64.exe`
-- `src/ui/stub-ink.ts` và `src/ui/stub-react.ts` được dùng để loại bỏ giao diện TUI khỏi bản exe
-
-Nếu cần dọn output cũ:
-
-```bash
-pnpm build:clean
-```
+The build bundles `src/cli.ts` into `dist-exe/cli.js`, packages `release/donumate-win-x64.exe`, and uses the UI stubs under `src/ui/` for the executable build.

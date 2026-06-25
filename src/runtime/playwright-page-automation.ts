@@ -1,8 +1,7 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
-import type { BidiClient } from '../bidi/bidi-client.js';
-import type { BidiKeyAction, BidiPointerAction, BrowsingContextInfo } from '../bidi/bidi-types.js';
-import { countInteractiveElementsExpression, type InteractiveElementsResult, type ButtonInfo } from '../automation/interactive-elements.js';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { countInteractiveElementsExpression, type ButtonInfo, type InteractiveElementsResult } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
 import { writeHostClipboardText } from './host-clipboard.js';
@@ -22,99 +21,76 @@ const waitForLoadExpression = `(() => {
 })()`;
 
 const getPageInfoExpression = `JSON.stringify({ title: document.title, url: location.href })`;
-const VIRTUAL_MOUSE_ID = 'donut-virtual-mouse';
-const VIRTUAL_KEYBOARD_ID = 'donut-virtual-keyboard';
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
-const CONTROL_KEY = '';
-const KEY_CODES: Record<string, string> = {
-  null: '\uE000',
-  cancel: '\uE001',
-  help: '\uE002',
-  backspace: '\uE003',
-  tab: '\uE004',
-  clear: '\uE005',
-  return: '\uE006',
-  enter: '\uE007',
-  shift: '\uE008',
-  control: '\uE009',
-  alt: '\uE00A',
-  pause: '\uE00B',
-  escape: '\uE00C',
-  space: '\uE00D',
-  pageup: '\uE00E',
-  pagedown: '\uE00F',
-  end: '\uE010',
-  home: '\uE011',
-  arrowleft: '\uE012',
-  arrowup: '\uE013',
-  arrowright: '\uE014',
-  arrowdown: '\uE015',
-  insert: '\uE016',
-  delete: '\uE017',
-  semicolon: '\uE018',
-  equals: '\uE019',
-  numpad0: '\uE01A',
-  numpad1: '\uE01B',
-  numpad2: '\uE01C',
-  numpad3: '\uE01D',
-  numpad4: '\uE01E',
-  numpad5: '\uE01F',
-  numpad6: '\uE020',
-  numpad7: '\uE021',
-  numpad8: '\uE022',
-  numpad9: '\uE023',
-  multiply: '\uE024',
-  add: '\uE025',
-  separator: '\uE026',
-  subtract: '\uE027',
-  decimal: '\uE028',
-  divide: '\uE029',
-  f1: '\uE031',
-  f2: '\uE032',
-  f3: '\uE033',
-  f4: '\uE034',
-  f5: '\uE035',
-  f6: '\uE036',
-  f7: '\uE037',
-  f8: '\uE038',
-  f9: '\uE039',
-  f10: '\uE03A',
-  f11: '\uE03B',
-  f12: '\uE03C',
-  meta: '\uE03D',
-  command: '\uE03D',
-  capslock: '\uE03E',
-  numlock: '\uE03F',
-  scrolllock: '\uE040',
-};
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
+
+const KEY_NAMES: Record<string, string> = {
+  backspace: 'Backspace',
+  tab: 'Tab',
+  return: 'Enter',
+  enter: 'Enter',
+  shift: 'Shift',
+  control: 'Control',
+  ctrl: 'Control',
+  alt: 'Alt',
+  escape: 'Escape',
+  esc: 'Escape',
+  space: ' ',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
+  end: 'End',
+  home: 'Home',
+  arrowleft: 'ArrowLeft',
+  left: 'ArrowLeft',
+  arrowup: 'ArrowUp',
+  up: 'ArrowUp',
+  arrowright: 'ArrowRight',
+  right: 'ArrowRight',
+  arrowdown: 'ArrowDown',
+  down: 'ArrowDown',
+  insert: 'Insert',
+  delete: 'Delete',
+  f1: 'F1',
+  f2: 'F2',
+  f3: 'F3',
+  f4: 'F4',
+  f5: 'F5',
+  f6: 'F6',
+  f7: 'F7',
+  f8: 'F8',
+  f9: 'F9',
+  f10: 'F10',
+  f11: 'F11',
+  f12: 'F12',
+  meta: 'Meta',
+  command: 'Meta',
+};
 
 type Point = { x: number; y: number };
 type Viewport = { width: number; height: number };
 type TargetPoint = Point & { viewport: Viewport; scrolled: boolean };
 type PathPoint = Point & { duration: number };
 
-export class PageAutomation implements BrowserPageAutomation {
-  private contextId?: string;
+export async function connectPlaywrightToCdp(remoteDebuggingPort: number, timeoutMs: number): Promise<Browser> {
+  return chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`, { timeout: timeoutMs });
+}
+
+export class PlaywrightPageAutomation implements BrowserPageAutomation {
+  private context?: BrowserContext;
+  private page?: Page;
   private mousePosition?: Point;
 
-  constructor(private readonly bidi: BidiClient) {}
+  constructor(private readonly browser: Browser) {}
 
-  /** Initialize BiDi session and get default browsing context */
   async init(): Promise<void> {
-    await this.bidi.newSession();
-    const tree = await this.bidi.getTree();
-    this.contextId = tree.contexts[0]?.context;
-    if (!this.contextId) {
-      throw new Error('No browsing context returned by BiDi.');
-    }
+    this.context = this.browser.contexts()[0] ?? await this.browser.newContext();
+    this.page = this.context.pages().find((page) => !page.isClosed()) ?? await this.context.newPage();
+    await this.page.bringToFront().catch(() => {});
   }
 
-  /** Navigate to URL */
   async goto(url: string): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    await this.bidi.navigate(this.contextId, url);
+    await this.requirePage().goto(url);
   }
 
   async navUrl(url: string): Promise<void> {
@@ -122,61 +98,57 @@ export class PageAutomation implements BrowserPageAutomation {
   }
 
   async newTab(url?: string): Promise<void> {
-    const current = this.contextId;
-    const contextId = await this.bidi.createContext(current);
-    this.contextId = contextId;
+    const context = this.requireContext();
+    this.page = await context.newPage();
     this.mousePosition = undefined;
     if (url) await this.goto(url);
   }
 
   async closeTab(): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    const closing = this.contextId;
-    await this.bidi.closeContext(closing);
-    const tree = await this.bidi.getTree();
-    this.contextId = tree.contexts.find((item) => item.context !== closing)?.context;
+    const page = this.requirePage();
+    await page.close();
+    const next = this.requireContext().pages().find((item) => !item.isClosed());
+    this.page = next;
     this.mousePosition = undefined;
-    if (!this.contextId) throw new Error('No browsing context remains after closing tab.');
-  }
-
-  async closeAllTabs(): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    const tree = await this.bidi.getTree();
-    const contexts = tree.contexts.map((item) => item.context);
-    if (contexts.length <= 1) return;
-    for (const context of contexts.slice(1)) await this.bidi.closeContext(context).catch(() => {});
-    await this.activeTab(contexts[0] ?? '0');
+    if (!this.page) throw new Error('No browsing context remains after closing tab.');
+    await this.page.bringToFront().catch(() => {});
   }
 
   async activeTab(target: string): Promise<void> {
-    const tree = await this.bidi.getTree();
-    const contexts = flattenContexts(tree.contexts);
+    const pages = this.requireContext().pages().filter((page) => !page.isClosed());
     const index = Number(target);
-    const contextId = Number.isInteger(index) ? contexts[index]?.context : contexts.find((item) => item.context === target)?.context;
-    if (!contextId) throw new Error(`Tab not found: ${target}`);
-    await this.bidi.activateContext(contextId);
-    this.contextId = contextId;
+    const page = Number.isInteger(index)
+      ? pages[index]
+      : pages.find((item) => item.url() === target);
+    if (!page) throw new Error(`Tab not found: ${target}`);
+    this.page = page;
     this.mousePosition = undefined;
+    await page.bringToFront().catch(() => {});
   }
 
-  /** Wait for document.readyState === 'complete' */
+  async closeAllTabs(): Promise<void> {
+    const pages = this.requireContext().pages().filter((page) => !page.isClosed());
+    if (pages.length <= 1) return;
+    const first = pages[0];
+    for (const page of pages.slice(1)) await page.close().catch(() => {});
+    if (!first) throw new Error('No browsing context remains after closing tabs.');
+    this.page = first;
+    this.mousePosition = undefined;
+    await first.bringToFront().catch(() => {});
+  }
+
   async waitForLoad(): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    await this.bidi.evaluate(this.contextId, waitForLoadExpression);
+    await this.evaluate(waitForLoadExpression);
   }
 
-  /** Delay N milliseconds */
   async delay(ms: number): Promise<void> {
     await sleep(ms);
   }
 
-  /** Execute arbitrary JS in page context with async IIFE support */
   async evaluate<T = unknown>(expression: string): Promise<T> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    return this.bidi.evaluate(this.contextId, expression) as Promise<T>;
+    return this.requirePage().evaluate(expression) as Promise<T>;
   }
 
-  /** Get page title and URL */
   async info(): Promise<{ title: string; url: string }> {
     const str = String(await this.evaluate(getPageInfoExpression));
     return JSON.parse(str) as { title: string; url: string };
@@ -215,7 +187,6 @@ export class PageAutomation implements BrowserPageAutomation {
     await this.waitForLoad();
   }
 
-  /** Check whether an XPath matches at least one element */
   async existsXPath(xpath: string): Promise<boolean> {
     return Boolean(await this.evaluate(`(() => {
       const xpath = ${JSON.stringify(xpath)};
@@ -223,7 +194,6 @@ export class PageAutomation implements BrowserPageAutomation {
     })()`));
   }
 
-  /** Wait until an XPath matches at least one element */
   async waitForXPath(xpath: string, timeoutMs = 10000): Promise<boolean> {
     return this.evaluate<boolean>(`(() => {
       const xpath = ${JSON.stringify(xpath)};
@@ -241,7 +211,6 @@ export class PageAutomation implements BrowserPageAutomation {
     })()`);
   }
 
-  /** Click first element matching XPath */
   async clickXPath(xpath: string): Promise<void> {
     const target = await this.resolveXPathTarget(xpath, 'clickable');
     if (target.scrolled) await this.humanPause();
@@ -252,58 +221,29 @@ export class PageAutomation implements BrowserPageAutomation {
     this.mousePosition = { x: target.x, y: target.y };
   }
 
-  /** Type text into first input-like element matching XPath using BiDi key actions */
   async typeTextXPath(xpath: string, text: string, options: HumanTypingOptions = {}): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     await this.clickAndFocusXPath(xpath, 'typeable');
-
-    try {
-      await this.bidi.performActions(this.contextId, [
-        {
-          type: 'key',
-          id: VIRTUAL_KEYBOARD_ID,
-          actions: this.buildHumanTypingActions(text, options),
-        },
-      ]);
-    } finally {
-      await this.bidi.releaseActions(this.contextId);
+    for (const chunk of splitGraphemes(text)) {
+      await this.requirePage().keyboard.type(chunk);
+      await sleep(this.typingDelay(chunk, options));
     }
   }
 
-  /** Paste text into first input-like element matching XPath using host clipboard and Ctrl+V */
   async pasteTextXPath(xpath: string, text: string): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-
     await runWithClipboardLock(async () => {
-      if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
       await writeHostClipboardText(text);
       await this.clickAndFocusXPath(xpath, 'typeable');
-
-      try {
-        await this.bidi.performActions(this.contextId, [
-          {
-            type: 'key',
-            id: VIRTUAL_KEYBOARD_ID,
-            actions: [
-              { type: 'keyDown', value: CONTROL_KEY },
-              { type: 'keyDown', value: 'v' },
-              { type: 'keyUp', value: 'v' },
-              { type: 'keyUp', value: CONTROL_KEY },
-            ],
-          },
-        ]);
-      } finally {
-        await this.bidi.releaseActions(this.contextId);
-      }
+      const keyboard = this.requirePage().keyboard;
+      await keyboard.down('Control');
+      await keyboard.press('v');
+      await keyboard.up('Control');
     });
   }
 
-  /** Backward-compatible alias for older automation calls */
   async typeXPath(xpath: string, text: string): Promise<void> {
     await this.typeTextXPath(xpath, text);
   }
 
-  /** Read inner text from first element matching XPath */
   async textXPath(xpath: string): Promise<string> {
     const text = await this.evaluate<string | null>(`(() => {
       const xpath = ${JSON.stringify(xpath)};
@@ -354,29 +294,26 @@ export class PageAutomation implements BrowserPageAutomation {
   }
 
   async fileUpload(filePath: string, xpath: string): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     const absolutePath = resolve(filePath);
     const file = await stat(absolutePath);
     if (!file.isFile()) throw new Error(`Upload path is not a file: ${absolutePath}`);
-
-    const element = await this.bidi.evaluateSharedReference(this.contextId, `(() => {
-      const xpath = ${JSON.stringify(xpath)};
-      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!(node instanceof HTMLInputElement) || node.type !== 'file') throw new Error('XPath must point to input[type=file].');
-      return node;
-    })()`);
-    await this.bidi.setFiles(this.contextId, element, [absolutePath]);
+    await this.requirePage().locator(`xpath=${xpath}`).first().setInputFiles(absolutePath);
   }
 
-  /** Count all interactive elements (a, button, input, etc.) */
   async countInteractiveElements(): Promise<InteractiveElementsResult> {
     return this.evaluate<InteractiveElementsResult>(countInteractiveElementsExpression);
   }
 
-  /** Get only button/link elements with details */
   async getButtons(): Promise<ButtonInfo[]> {
     const result = await this.countInteractiveElements();
     return result.buttons;
+  }
+
+  async sendKey(...keys: string[]): Promise<void> {
+    const keyboard = this.requirePage().keyboard;
+    const mapped = keys.map((key) => KEY_NAMES[key.toLowerCase()] ?? key);
+    for (const key of mapped) await keyboard.down(key);
+    for (let i = mapped.length - 1; i >= 0; i -= 1) await keyboard.up(mapped[i] ?? '');
   }
 
   private async clickAndFocusXPath(xpath: string, actionName: string): Promise<void> {
@@ -398,29 +335,6 @@ export class PageAutomation implements BrowserPageAutomation {
     if (!focused) throw new Error(`XPath not found or not ${actionName}: ${xpath}`);
   }
 
-  private buildHumanTypingActions(text: string, options: HumanTypingOptions): BidiKeyAction[] {
-    const minDelayMs = options.minDelayMs ?? DEFAULT_TYPING_MIN_DELAY_MS;
-    const maxDelayMs = options.maxDelayMs ?? DEFAULT_TYPING_MAX_DELAY_MS;
-    const lowerDelayMs = Math.max(0, Math.min(minDelayMs, maxDelayMs));
-    const upperDelayMs = Math.max(lowerDelayMs, Math.max(minDelayMs, maxDelayMs));
-    const actions: BidiKeyAction[] = [];
-
-    for (const chunk of splitGraphemes(text)) {
-      actions.push({ type: 'keyDown', value: chunk });
-      actions.push({ type: 'keyUp', value: chunk });
-      actions.push({ type: 'pause', duration: this.typingDelay(chunk, lowerDelayMs, upperDelayMs) });
-    }
-
-    return actions;
-  }
-
-  private typingDelay(chunk: string, minDelayMs: number, maxDelayMs: number): number {
-    const base = minDelayMs === maxDelayMs ? minDelayMs : this.randomInt(minDelayMs, maxDelayMs);
-    if (/\s/.test(chunk)) return base + this.randomInt(20, 90);
-    if (/[.,!?;:]$/.test(chunk)) return base + this.randomInt(80, 180);
-    return base;
-  }
-
   private async resolveXPathTarget(xpath: string, actionName: string): Promise<TargetPoint> {
     const raw = await this.evaluate<string>(`(() => {
       const xpath = ${JSON.stringify(xpath)};
@@ -438,7 +352,6 @@ export class PageAutomation implements BrowserPageAutomation {
         rect.top < viewport.height &&
         rect.left < viewport.width;
       const rectBefore = readRect();
-      const visible = style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
       const scrolled = !isInViewport(rectBefore);
       if (scrolled) node.scrollIntoView({ block: 'center', inline: 'center' });
       const rect = readRect();
@@ -460,23 +373,16 @@ export class PageAutomation implements BrowserPageAutomation {
   }
 
   private async moveMouseTo(target: TargetPoint): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     await this.ensureVirtualCursor();
-
+    const page = this.requirePage();
     const start = this.clampPoint(this.mousePosition ?? this.randomStartPoint(target), target.viewport);
     const path = this.generateMousePath(start, target, target.viewport);
     await this.showVirtualCursor(start, 0);
 
     for (const point of path) {
       await this.showVirtualCursor(point, point.duration);
-      await this.bidi.performActions(this.contextId, [
-        {
-          type: 'pointer',
-          id: VIRTUAL_MOUSE_ID,
-          parameters: { pointerType: 'mouse' },
-          actions: [this.toPointerMove(point)],
-        },
-      ]);
+      await page.mouse.move(Math.round(point.x), Math.round(point.y), { steps: 1 });
+      await sleep(point.duration);
     }
 
     this.mousePosition = { x: target.x, y: target.y };
@@ -484,21 +390,11 @@ export class PageAutomation implements BrowserPageAutomation {
   }
 
   private async clickCurrentMousePosition(point: Point): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    await this.bidi.performActions(this.contextId, [
-      {
-        type: 'pointer',
-        id: VIRTUAL_MOUSE_ID,
-        parameters: { pointerType: 'mouse' },
-        actions: [
-          { type: 'pointerMove', x: Math.round(point.x), y: Math.round(point.y), duration: 0, origin: 'viewport' },
-          { type: 'pointerDown', button: 0 },
-          { type: 'pause', duration: this.randomInt(35, 95) },
-          { type: 'pointerUp', button: 0 },
-        ],
-      },
-    ]);
-    await this.bidi.releaseActions(this.contextId);
+    const page = this.requirePage();
+    await page.mouse.move(Math.round(point.x), Math.round(point.y), { steps: 1 });
+    await page.mouse.down();
+    await sleep(this.randomInt(35, 95));
+    await page.mouse.up();
   }
 
   private generateMousePath(start: Point, target: Point, viewport: Viewport): PathPoint[] {
@@ -587,14 +483,15 @@ export class PageAutomation implements BrowserPageAutomation {
     })()`);
   }
 
-  private toPointerMove(point: PathPoint): BidiPointerAction {
-    return {
-      type: 'pointerMove',
-      x: Math.round(point.x),
-      y: Math.round(point.y),
-      duration: point.duration,
-      origin: 'viewport',
-    };
+  private typingDelay(chunk: string, options: HumanTypingOptions): number {
+    const minDelayMs = options.minDelayMs ?? DEFAULT_TYPING_MIN_DELAY_MS;
+    const maxDelayMs = options.maxDelayMs ?? DEFAULT_TYPING_MAX_DELAY_MS;
+    const lowerDelayMs = Math.max(0, Math.min(minDelayMs, maxDelayMs));
+    const upperDelayMs = Math.max(lowerDelayMs, Math.max(minDelayMs, maxDelayMs));
+    const base = lowerDelayMs === upperDelayMs ? lowerDelayMs : this.randomInt(lowerDelayMs, upperDelayMs);
+    if (/\s/.test(chunk)) return base + this.randomInt(20, 90);
+    if (/[.,!?;:]$/.test(chunk)) return base + this.randomInt(80, 180);
+    return base;
   }
 
   private randomStartPoint(target: TargetPoint): Point {
@@ -632,19 +529,6 @@ export class PageAutomation implements BrowserPageAutomation {
     return min + Math.random() * (max - min);
   }
 
-  async sendKey(...keys: string[]): Promise<void> {
-    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-    const mapped = keys.map((k) => KEY_CODES[k.toLowerCase()] ?? k);
-    const actions: BidiKeyAction[] = [];
-    for (const code of mapped) actions.push({ type: 'keyDown', value: code });
-    for (let i = mapped.length - 1; i >= 0; i--) actions.push({ type: 'keyUp', value: mapped[i] ?? '' });
-    try {
-      await this.bidi.performActions(this.contextId, [{ type: 'key', id: VIRTUAL_KEYBOARD_ID, actions }]);
-    } finally {
-      await this.bidi.releaseActions(this.contextId);
-    }
-  }
-
   private randomInt(min: number, max: number): number {
     return Math.floor(this.randomFloat(min, max + 1));
   }
@@ -652,19 +536,20 @@ export class PageAutomation implements BrowserPageAutomation {
   private async humanPause(minMs = 200, maxMs = 700): Promise<void> {
     await sleep(this.randomInt(minMs, maxMs));
   }
+
+  private requireContext(): BrowserContext {
+    if (!this.context) throw new Error('Page not initialized. Call init() first.');
+    return this.context;
+  }
+
+  private requirePage(): Page {
+    if (!this.page || this.page.isClosed()) throw new Error('Page not initialized. Call init() first.');
+    return this.page;
+  }
 }
 
 function wrapAsyncJs(script: string): string {
   return `(async () => {\n${script}\n})()`;
-}
-
-function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[] {
-  const result: BrowsingContextInfo[] = [];
-  for (const context of contexts) {
-    result.push(context);
-    if (context.children?.length) result.push(...flattenContexts(context.children));
-  }
-  return result;
 }
 
 function cubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {

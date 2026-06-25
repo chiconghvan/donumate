@@ -1,33 +1,47 @@
 import { DonutApiClient } from '../../donut/api-client.js';
-import { selectCamoufoxProfile } from '../../donut/profile-selector.js';
-import { BidiClient } from '../../bidi/bidi-client.js';
-import { PageAutomation } from '../page-automation.js';
-import { coerceAndValidateInputs, stringifyInputValues, type FlowInputOverrides } from '../dsl/input-values.js';
-import { runFlowInputForm } from '../../ui/run-flow-input-form.js';
+import { selectRunnableBrowserProfile } from '../../donut/profile-selector.js';
+import { coerceAndValidateInputs, stringifyInputValues } from '../input-values.js';
+import { runInputForm } from '../../ui/run-input-form.js';
 import { CliBackError, formatError, isCliBackError } from '../../utils/errors.js';
 import { setCleaningUp } from '../../utils/abort.js';
 import { logger } from '../../utils/logger.js';
 import { sleep } from '../../utils/retry.js';
 import { saveInputState, loadSavedInputState } from '../input-state-store.js';
-import { clearScreen, launchProfileWithRetry, type RunnerOptions } from '../runner.js';
+import { clearScreen, launchProfileWithRetry } from '../profile-session.js';
 import type { ApiProfile, RunProfileResponse } from '../../donut/api-types.js';
-import type { FlowInputValue } from '../types.js';
+import type { BidiClient } from '../../bidi/bidi-client.js';
+import type { InputOverrides, InputValue } from '../input-types.js';
+import type { BrowserPageAutomation } from '../page-automation-types.js';
 import type { GscriptBlockNode, GscriptExecutionContext } from './types.js';
+import type { Browser } from 'playwright-core';
 import { executeGscriptBlock } from './executor.js';
-import { loadGscriptProgram, toFlowInputDefinitions } from './parser.js';
+import { loadGscriptProgram, toInputDefinitions } from './parser.js';
 
-export type GscriptRunnerOptions = RunnerOptions;
+export type GscriptRunnerOptions = {
+  apiBaseUrl: string;
+  apiToken?: string;
+  profileId?: string;
+  headless: boolean;
+  bidiConnectTimeoutMs: number;
+  bidiCommandTimeoutMs: number;
+  scriptSpec: string;
+  scriptInputs?: InputOverrides;
+  minimalLog?: boolean;
+  signal?: AbortSignal;
+  initialInputsState?: { values: Record<string, string>; cursor: number };
+  initialProfileId?: string;
+};
 
-function hasAllInputOverrides(definitions: { name: string }[], overrides: FlowInputOverrides): boolean {
+function hasAllInputOverrides(definitions: { name: string }[], overrides: InputOverrides): boolean {
   return definitions.every((definition) => overrides[definition.name] !== undefined);
 }
 
 async function resolveInputs(
   options: GscriptRunnerOptions,
-  inputDefinitions: ReturnType<typeof toFlowInputDefinitions>,
+  inputDefinitions: ReturnType<typeof toInputDefinitions>,
   currentInputsState: { values: Record<string, string>; cursor: number }
 ): Promise<{
-  inputs: Record<string, FlowInputValue>;
+  inputs: Record<string, InputValue>;
   nextState: { values: Record<string, string>; cursor: number };
 }> {
   if (inputDefinitions.length === 0) {
@@ -40,11 +54,11 @@ async function resolveInputs(
     return { inputs, nextState: { values: overrides, cursor: 0 } };
   }
 
-  const formResult = await runFlowInputForm(inputDefinitions, overrides, currentInputsState);
+  const formResult = await runInputForm(inputDefinitions, overrides, currentInputsState);
   return { inputs: formResult.values, nextState: formResult.state };
 }
 
-function profileRuntimeInputs(profile: ApiProfile): Record<string, FlowInputValue> {
+function profileRuntimeInputs(profile: ApiProfile): Record<string, InputValue> {
   return {
     profileID: profile.id,
     profileId: profile.id,
@@ -62,12 +76,13 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
   const donut = new DonutApiClient(options.apiBaseUrl, options.apiToken, signal);
   const log = (...args: unknown[]) => logger.info(args.join(' '));
   const program = await loadGscriptProgram(options.scriptSpec);
-  const inputDefinitions = toFlowInputDefinitions(program.inputs);
+  const inputDefinitions = toInputDefinitions(program.inputs);
 
   let currentInputsState = options.initialInputsState ?? { values: await loadSavedInputState(options.scriptSpec) ?? {}, cursor: 0 };
   let currentProfileId = options.initialProfileId;
-  let inputs: Record<string, FlowInputValue>;
+  let inputs: Record<string, InputValue>;
   let profile: ApiProfile;
+  let profileNeedsDetailFetch = false;
 
   if (options.profileId) {
     try {
@@ -95,8 +110,9 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
 
       const profiles = await donut.listProfiles();
       try {
-        profile = await selectCamoufoxProfile(profiles, currentProfileId);
+        profile = await selectRunnableBrowserProfile(profiles, currentProfileId);
         currentProfileId = profile.id;
+        profileNeedsDetailFetch = true;
       } catch (error) {
         if (isCliBackError(error)) {
           if (inputDefinitions.length > 0) {
@@ -111,7 +127,9 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     }
   }
 
-  profile = await donut.getProfile(profile!.id);
+  if (profileNeedsDetailFetch) {
+    profile = await donut.getProfile(profile!.id);
+  }
   inputs = { ...inputs!, ...profileRuntimeInputs(profile) };
   let args: Record<string, string> = stringifyInputValues(inputs);
   clearScreen();
@@ -128,7 +146,8 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
 
   let run: RunProfileResponse | undefined;
   let bidi: BidiClient | undefined;
-  let page: PageAutomation | undefined;
+  let playwrightBrowser: Browser | undefined;
+  let page: BrowserPageAutomation | undefined;
   let launched = false;
   let mainError: unknown;
   let afterQuitError: unknown;
@@ -143,6 +162,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
         donut,
         cleanupDonut: new DonutApiClient(options.apiBaseUrl, options.apiToken),
         profileId: profile.id,
+        browser: profile.browser,
         headless: options.headless,
         bidiConnectTimeoutMs: options.bidiConnectTimeoutMs,
         bidiCommandTimeoutMs: options.bidiCommandTimeoutMs,
@@ -150,11 +170,14 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       });
       run = session.run;
       bidi = session.bidi;
+      playwrightBrowser = session.playwrightBrowser;
       page = session.page;
       launched = true;
 
       baseCtx.run = run;
+      baseCtx.runtime = session.runtime;
       baseCtx.bidi = bidi;
+      baseCtx.playwrightBrowser = playwrightBrowser;
       baseCtx.page = page;
 
       clearScreen();
@@ -170,6 +193,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     setCleaningUp(true);
     try {
       await bidi?.close().catch(() => {});
+      await playwrightBrowser?.close().catch(() => {});
       if (launched) {
         const cleanupDonut = new DonutApiClient(options.apiBaseUrl, options.apiToken);
         await cleanupDonut.killProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
@@ -178,6 +202,8 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       try {
         delete baseCtx.page;
         delete baseCtx.bidi;
+        delete baseCtx.playwrightBrowser;
+        delete baseCtx.runtime;
         delete baseCtx.run;
         await executeGscriptBlock(baseCtx, program.afterQuit);
       } catch (error) {

@@ -3,9 +3,9 @@ import { createHmac } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import XLSX from 'xlsx';
 import { AppError } from '../../utils/errors.js';
-import type { FlowInputValue } from '../types.js';
+import type { InputValue } from '../input-types.js';
 import type { GscriptActionNode, GscriptExecutionContext, GscriptSignal } from './types.js';
-import { formatFlowValue, formatRedactedValue, logGscript } from './logging.js';
+import { formatInputValue, formatRedactedValue, logGscript } from './logging.js';
 import { asBoolean, asNumber, interpolate, parseLiteralOrInterpolated, setVariable, stringifyValue } from './values.js';
 
 const XLSXApi = XLSX as typeof import('xlsx');
@@ -163,7 +163,7 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
     case 39:
       {
         const url = interpolate(input.URL, ctx.inputs);
-        if (ctx.minimalLog) logGscript(ctx, `url ${formatFlowValue(url)}`);
+        if (ctx.minimalLog) logGscript(ctx, `url ${formatInputValue(url)}`);
         await requirePage(ctx, node).goto(url);
       }
       await requirePage(ctx, node).waitForLoad();
@@ -188,7 +188,7 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
     case 44:
       {
         const xpath = requireXPath(ctx, node, input);
-        logGscript(ctx, `wait xpath ${formatFlowValue(xpath)} timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`);
+        logGscript(ctx, `wait xpath ${formatInputValue(xpath)} timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`);
         const found = await requirePage(ctx, node).waitForXPath(xpath, secondsToMs(input.TIME_OUT, ctx, 10));
         if (!found) logGscript(ctx, `wait xpath skipped node=${node.id}`);
       }
@@ -252,8 +252,8 @@ async function runAction(ctx: GscriptExecutionContext, node: GscriptActionNode):
     case 68:
       {
         const code = interpolate(input.FILE_OR_CODE, ctx.inputs);
-        if (!ctx.minimalLog) logGscript(ctx, `executeJs code=${formatFlowValue(previewText(code))}`);
-        const value = await requirePage(ctx, node).executeJs<FlowInputValue>(code);
+        if (!ctx.minimalLog) logGscript(ctx, `executeJs code=${formatInputValue(previewText(code))}`);
+        const value = await requirePage(ctx, node).executeJs<InputValue>(code);
         setVariable(ctx.inputs, out, value);
         logVariableSet(ctx, out, value);
         logMinimalVariableSet(ctx, out, value);
@@ -304,24 +304,24 @@ async function sleepRange(ctx: GscriptExecutionContext, minText?: string, maxTex
   await ctx.sleep(randomInt(Math.max(0, min), Math.max(0, max)));
 }
 
-function countValue(value: FlowInputValue): number {
+function countValue(value: InputValue): number {
   if (Array.isArray(value)) return value.length;
   if (typeof value === 'string') return value === '' ? 0 : value.split(/\r?\n|,/).filter(Boolean).length;
   return 0;
 }
 
-function readJsonPath(source: FlowInputValue, path: string): FlowInputValue {
+function readJsonPath(source: InputValue, path: string): InputValue {
   const parsed = typeof source === 'string' ? JSON.parse(source) : source;
   let current: unknown = parsed;
   for (const part of path.split('.').filter(Boolean)) {
     if (current === null || typeof current !== 'object') return '';
     current = (current as Record<string, unknown>)[part];
   }
-  return toFlowValue(current);
+  return toInputValue(current);
 }
 
-function toFlowValue(value: unknown): FlowInputValue {
-  if (Array.isArray(value)) return value.map(toFlowValue);
+function toInputValue(value: unknown): InputValue {
+  if (Array.isArray(value)) return value.map(toInputValue);
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
   if (value === null || value === undefined) return '';
   return JSON.stringify(value);
@@ -358,18 +358,18 @@ async function httpRequest(input: Record<string, string>, ctx: GscriptExecutionC
   const headers = parseHeaders(interpolate(input.HEADER, ctx.inputs));
   const body = method === 'GET' || method === 'HEAD' ? undefined : interpolate(input.DATA, ctx.inputs);
   const url = interpolate(input.URL, ctx.inputs);
-  logGscript(ctx, `httpRequest method=${method} url=${formatFlowValue(url)}`);
-  if (Object.keys(headers).length > 0) logGscript(ctx, `httpRequest headers=${formatFlowValue(headers)}`);
-  if (body !== undefined) logGscript(ctx, `httpRequest body=${formatFlowValue(body)}`);
+  logGscript(ctx, `httpRequest method=${method} url=${formatInputValue(url)}`);
+  if (Object.keys(headers).length > 0) logGscript(ctx, `httpRequest headers=${formatInputValue(headers)}`);
+  if (body !== undefined) logGscript(ctx, `httpRequest body=${formatInputValue(body)}`);
   const response = await fetch(url, { method, headers, body });
   const responseText = await response.text();
-  logGscript(ctx, `httpRequest response status=${response.status} ok=${response.ok} body=${formatFlowValue(previewText(responseText))}`);
+  logGscript(ctx, `httpRequest response status=${response.status} ok=${response.ok} body=${formatInputValue(previewText(responseText))}`);
   return responseText;
 }
 
 async function httpDownload(input: Record<string, string>, ctx: GscriptExecutionContext): Promise<void> {
   const url = interpolate(input.URL, ctx.inputs);
-  logGscript(ctx, `httpDownload url=${formatFlowValue(url)} savePath=${formatFlowValue(resolvePath(interpolate(input.SAVE_PATH, ctx.inputs)))}`);
+  logGscript(ctx, `httpDownload url=${formatInputValue(url)} savePath=${formatInputValue(resolvePath(interpolate(input.SAVE_PATH, ctx.inputs)))}`);
   const response = await fetch(url, { headers: parseHeaders(interpolate(input.HEADER, ctx.inputs)) });
   if (!response.ok) throw new AppError(`HTTP download failed: ${response.status} ${response.statusText}`);
   const savePath = resolvePath(interpolate(input.SAVE_PATH, ctx.inputs));
@@ -428,12 +428,12 @@ function sheetByInput(workbook: XLSX.WorkBook, sheetId: string): XLSX.WorkSheet 
   return workbook.Sheets[sheetName];
 }
 
-function readExcelCell(input: Record<string, string>, ctx: GscriptExecutionContext): FlowInputValue {
+function readExcelCell(input: Record<string, string>, ctx: GscriptExecutionContext): InputValue {
   const filePath = interpolate(input.FILE_PATH, ctx.inputs);
   const workbook = readWorkbook(filePath);
   const sheet = sheetByInput(workbook, interpolate(input.SHEET_ID, ctx.inputs));
   const address = excelAddress(input, ctx);
-  return toFlowValue(sheet[address]?.v);
+  return toInputValue(sheet[address]?.v);
 }
 
 function writeExcelCell(input: Record<string, string>, ctx: GscriptExecutionContext): void {
@@ -494,12 +494,7 @@ async function exportCookies(ctx: GscriptExecutionContext, node: GscriptActionNo
 }
 
 async function closeAllTabs(ctx: GscriptExecutionContext, node: GscriptActionNode): Promise<void> {
-  if (!ctx.bidi || !ctx.page) throw new AppError(`GPM action requires browser page: ${actionLabel(node)}.`);
-  const tree = await ctx.bidi.getTree();
-  const contexts = tree.contexts.map((item) => item.context);
-  if (contexts.length <= 1) return;
-  for (const context of contexts.slice(1)) await ctx.bidi.closeContext(context).catch(() => {});
-  await ctx.page.activeTab(contexts[0] ?? '0');
+  await requirePage(ctx, node).closeAllTabs();
 }
 
 function resolvePath(path: string): string {
@@ -556,16 +551,16 @@ function formatActionLabel(node: GscriptActionNode, ctx: GscriptExecutionContext
   return parts.join(' | ');
 }
 
-function logVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: FlowInputValue, source?: string): void {
+function logVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: InputValue, source?: string): void {
   if (ctx.minimalLog) return;
   if (!name) return;
   const suffix = source ? ` (${source})` : '';
-  logGscript(ctx, `set ${name} = ${formatFlowValue(value)}${suffix}`);
+  logGscript(ctx, `set ${name} = ${formatInputValue(value)}${suffix}`);
 }
 
-function logMinimalVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: FlowInputValue): void {
+function logMinimalVariableSet(ctx: GscriptExecutionContext, name: string | null | undefined, value: InputValue): void {
   if (!ctx.minimalLog || !name) return;
-  logGscript(ctx, `set ${name} = ${formatFlowValue(value)}`);
+  logGscript(ctx, `set ${name} = ${formatInputValue(value)}`);
 }
 
 function formatActionType(node: GscriptActionNode, ctx: GscriptExecutionContext): string {
@@ -621,21 +616,21 @@ function formatActionDetails(node: GscriptActionNode, ctx: GscriptExecutionConte
   const input = node.rawInput;
   switch (node.actionType) {
     case 1:
-      return input.VALUE ? [`value=${formatFlowValue(parseLiteralOrInterpolated(input.VALUE, ctx.inputs))}`] : [];
+      return input.VALUE ? [`value=${formatInputValue(parseLiteralOrInterpolated(input.VALUE, ctx.inputs))}`] : [];
     case 2:
-      return [`current=${formatFlowValue(parseLiteralOrInterpolated(input.CURRENT_VAL, ctx.inputs))}`, `increaseBy=${formatFlowValue(parseLiteralOrInterpolated(input.INCREASE_BY, ctx.inputs))}`];
+      return [`current=${formatInputValue(parseLiteralOrInterpolated(input.CURRENT_VAL, ctx.inputs))}`, `increaseBy=${formatInputValue(parseLiteralOrInterpolated(input.INCREASE_BY, ctx.inputs))}`];
     case 3:
-      return [`current=${formatFlowValue(parseLiteralOrInterpolated(input.CURRENT_VAL, ctx.inputs))}`, `decreaseBy=${formatFlowValue(parseLiteralOrInterpolated(input.DESCREASE_BY, ctx.inputs))}`];
+      return [`current=${formatInputValue(parseLiteralOrInterpolated(input.CURRENT_VAL, ctx.inputs))}`, `decreaseBy=${formatInputValue(parseLiteralOrInterpolated(input.DESCREASE_BY, ctx.inputs))}`];
     case 4:
-      return [`input=${formatFlowValue(parseLiteralOrInterpolated(input.INPUT_ARRAY, ctx.inputs))}`];
+      return [`input=${formatInputValue(parseLiteralOrInterpolated(input.INPUT_ARRAY, ctx.inputs))}`];
     case 7:
-      return [`min=${formatFlowValue(parseLiteralOrInterpolated(input.MIN, ctx.inputs))}`, `max=${formatFlowValue(parseLiteralOrInterpolated(input.MAX, ctx.inputs))}`];
+      return [`min=${formatInputValue(parseLiteralOrInterpolated(input.MIN, ctx.inputs))}`, `max=${formatInputValue(parseLiteralOrInterpolated(input.MAX, ctx.inputs))}`];
     case 9:
-      return [`text=${formatFlowValue(stringifyValue(parseLiteralOrInterpolated(input.INPUT_TEXT, ctx.inputs)))}`, `split=${formatFlowValue(interpolate(input.SPLIT_CHAR, ctx.inputs))}`];
+      return [`text=${formatInputValue(stringifyValue(parseLiteralOrInterpolated(input.INPUT_TEXT, ctx.inputs)))}`, `split=${formatInputValue(interpolate(input.SPLIT_CHAR, ctx.inputs))}`];
     case 10:
-      return [`json=${formatFlowValue(parseLiteralOrInterpolated(input.JSON, ctx.inputs))}`, `path=${formatFlowValue(interpolate(input.NODES, ctx.inputs))}`, ...(node.outputVariableName ? [`output=${node.outputVariableName}`] : [])];
+      return [`json=${formatInputValue(parseLiteralOrInterpolated(input.JSON, ctx.inputs))}`, `path=${formatInputValue(interpolate(input.NODES, ctx.inputs))}`, ...(node.outputVariableName ? [`output=${node.outputVariableName}`] : [])];
     case 11:
-      return [`min=${formatFlowValue(parseLiteralOrInterpolated(input.MIN, ctx.inputs))}`, `max=${formatFlowValue(parseLiteralOrInterpolated(input.MAX, ctx.inputs))}`];
+      return [`min=${formatInputValue(parseLiteralOrInterpolated(input.MIN, ctx.inputs))}`, `max=${formatInputValue(parseLiteralOrInterpolated(input.MAX, ctx.inputs))}`];
     case 13:
     case 17:
     case 18:
@@ -653,57 +648,57 @@ function formatActionDetails(node: GscriptActionNode, ctx: GscriptExecutionConte
     case 74:
       return formatPathDetails(node, ctx);
     case 21:
-      return [`file=${formatFlowValue(interpolate(input.FILE_PATH, ctx.inputs))}`, `sheet=${formatFlowValue(interpolate(input.SHEET_ID, ctx.inputs))}`, `cell=${formatFlowValue(excelAddress(input, ctx))}`];
+      return [`file=${formatInputValue(interpolate(input.FILE_PATH, ctx.inputs))}`, `sheet=${formatInputValue(interpolate(input.SHEET_ID, ctx.inputs))}`, `cell=${formatInputValue(excelAddress(input, ctx))}`];
     case 22:
-      return [`file=${formatFlowValue(interpolate(input.FILE_PATH, ctx.inputs))}`, `sheet=${formatFlowValue(interpolate(input.SHEET_ID, ctx.inputs))}`, `cell=${formatFlowValue(excelAddress(input, ctx))}`, `text=${formatFlowValue(interpolate(input.DATA, ctx.inputs))}`];
+      return [`file=${formatInputValue(interpolate(input.FILE_PATH, ctx.inputs))}`, `sheet=${formatInputValue(interpolate(input.SHEET_ID, ctx.inputs))}`, `cell=${formatInputValue(excelAddress(input, ctx))}`, `text=${formatInputValue(interpolate(input.DATA, ctx.inputs))}`];
     case 29:
-      return [`method=${interpolate(input.METHOD || 'GET', ctx.inputs).toUpperCase()}`, `url=${formatFlowValue(interpolate(input.URL, ctx.inputs))}`];
+      return [`method=${interpolate(input.METHOD || 'GET', ctx.inputs).toUpperCase()}`, `url=${formatInputValue(interpolate(input.URL, ctx.inputs))}`];
     case 36:
       return [];
     case 37:
-      return [`tabIndex=${formatFlowValue(interpolate(input.TAB_INDEX, ctx.inputs))}`];
+      return [`tabIndex=${formatInputValue(interpolate(input.TAB_INDEX, ctx.inputs))}`];
     case 38:
       return [];
     case 39:
-      return [`url=${formatFlowValue(interpolate(input.URL, ctx.inputs))}`];
+      return [`url=${formatInputValue(interpolate(input.URL, ctx.inputs))}`];
     case 41:
       return [];
     case 42:
       return [];
     case 43:
-      return [`currentUrl=${formatFlowValue(interpolate(input.CURRENT_URL, ctx.inputs))}`, `timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`];
+      return [`currentUrl=${formatInputValue(interpolate(input.CURRENT_URL, ctx.inputs))}`, `timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`];
     case 44:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`, `timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`, `timeout=${secondsToMs(input.TIME_OUT, ctx, 10)}ms`];
     case 45:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`, `attr=${formatFlowValue(interpolate(input.ATTR_NAME, ctx.inputs))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`, `attr=${formatInputValue(interpolate(input.ATTR_NAME, ctx.inputs))}`];
     case 46:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`];
     case 47:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`];
     case 48:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`];
     case 50:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`];
     case 54: {
       const type = interpolate(input.TYPE, ctx.inputs).toUpperCase();
       const key = interpolate(input.KEY, ctx.inputs);
       if (type === 'TEXT') {
         const xpath = node.elementXPath ? interpolate(node.elementXPath, ctx.inputs) : interpolate(input.XPATH ?? '', ctx.inputs);
         const delayPress = asNumber(parseLiteralOrInterpolated(input.DELAY_PRESS, ctx.inputs));
-        return [`xpath=${formatFlowValue(xpath)}`, `text=${formatFlowValue(key)}`, `mode=${delayPress < 0 ? 'pasteText' : 'typeText'}`];
+        return [`xpath=${formatInputValue(xpath)}`, `text=${formatInputValue(key)}`, `mode=${delayPress < 0 ? 'pasteText' : 'typeText'}`];
       }
-      return [`text=${formatFlowValue(key)}`];
+      return [`text=${formatInputValue(key)}`];
     }
     case 57:
       return [];
     case 58:
-      return [`code=${formatFlowValue('window.scrollTo(0, 0)')}`];
+      return [`code=${formatInputValue('window.scrollTo(0, 0)')}`];
     case 59:
-      return [`code=${formatFlowValue('window.scrollTo(0, document.body.scrollHeight)')}`];
+      return [`code=${formatInputValue('window.scrollTo(0, document.body.scrollHeight)')}`];
     case 60:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`];
     case 68:
-      return [`code=${formatFlowValue(previewText(interpolate(input.FILE_OR_CODE, ctx.inputs)))}`];
+      return [`code=${formatInputValue(previewText(interpolate(input.FILE_OR_CODE, ctx.inputs)))}`];
     case 73:
       return [];
     case 76:
@@ -731,11 +726,11 @@ function formatPathDetails(node: GscriptActionNode, ctx: GscriptExecutionContext
     case 71:
     case 72:
     case 74:
-      return input.FILE_PATH ? [`path=${formatFlowValue(interpolate(input.FILE_PATH, ctx.inputs))}`] : input.FOLDER_PATH ? [`path=${formatFlowValue(interpolate(input.FOLDER_PATH, ctx.inputs))}`] : [];
+      return input.FILE_PATH ? [`path=${formatInputValue(interpolate(input.FILE_PATH, ctx.inputs))}`] : input.FOLDER_PATH ? [`path=${formatInputValue(interpolate(input.FOLDER_PATH, ctx.inputs))}`] : [];
     case 30:
-      return [`url=${formatFlowValue(interpolate(input.URL, ctx.inputs))}`, `savePath=${formatFlowValue(interpolate(input.SAVE_PATH, ctx.inputs))}`];
+      return [`url=${formatInputValue(interpolate(input.URL, ctx.inputs))}`, `savePath=${formatInputValue(interpolate(input.SAVE_PATH, ctx.inputs))}`];
     case 55:
-      return [`xpath=${formatFlowValue(optionalXPath(node, input, ctx))}`, `file=${formatFlowValue(interpolate(input.FILE_PATH, ctx.inputs))}`];
+      return [`xpath=${formatInputValue(optionalXPath(node, input, ctx))}`, `file=${formatInputValue(interpolate(input.FILE_PATH, ctx.inputs))}`];
     default:
       return [];
   }

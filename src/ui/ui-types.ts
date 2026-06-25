@@ -28,14 +28,8 @@ export type UpdateInfo = {
 
 export type UpdateChoice = 'install' | 'skip';
 
-export type FlowScriptEditorArgs = {
-  filePath: string;
-  initialSource: string;
-};
-
 export interface UiProvider {
   runListPicker<T extends string>(args: ListPickerArgs<T>): Promise<T | undefined>;
   runTextInputPrompt(args: TextInputArgs): Promise<string | undefined>;
   runUpdatePrompt(update: UpdateInfo): Promise<UpdateChoice | undefined>;
-  runFlowScriptEditor(args: FlowScriptEditorArgs): Promise<string | undefined>;
 }

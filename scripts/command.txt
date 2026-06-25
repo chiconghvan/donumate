@@ -1,0 +1,6 @@
+# Get Link v4
+PS E:\Code\donumate> .\release\donumate-win-x64.exe gscript --script "E:\Code\donumate\convert_site\getlink-v4.gscript" --profile 6361a925-cba9-4be7-bd3e-59dc198e6f14 --input port=8089 --input type=Account --input sourceFile=https://www.threads.com/@tranngocduy25 --input sourceFolder="E:\Threads\Link\source" --input minLike=2
+# Post v4
+PS E:\Code\donumate> .\release\donumate-win-x64.exe gscript --script "E:\OneDrive\0. Threads\GPM Project\Auto Post Threads v4\src.gscript" --profile 6361a925-cba9-4be7-bd3e-59dc198e6f14 --input port=8089 --input isChange=No --input avatarFolder="C:\Users\PC\Desktop\Avatar"
+# Download
+PS E:\Code\donumate> .\release\donumate-win-x64.exe gscript --script "E:\OneDrive\0. Threads\GPM Project\Download Threads Posts donut\src.gscript" --profile 30fdec72-b5b5-4284-94b7-e9b1925fd82b --minimal-log --headless --input port=8089 --input affPort=3000 --input exportFolder=E:\Threads\Content\new

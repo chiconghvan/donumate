@@ -14,7 +14,7 @@
 
 import { build } from 'esbuild';
 import { execSync } from 'child_process';
-import { rmSync, existsSync, mkdirSync, statSync, cpSync } from 'fs';
+import { rmSync, existsSync, mkdirSync, statSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -50,38 +50,9 @@ function typecheck() {
   run('pnpm typecheck');
 }
 
-function copyBuilderAssets(outdirName) {
-  const source = resolve(ROOT, 'src/script-builder/web');
-  const target = resolve(ROOT, outdirName, 'script-builder/web');
-  if (existsSync(source)) {
-    mkdirSync(target, { recursive: true });
-    cpSync(source, target, { recursive: true });
-    console.log(`  Copied script builder assets to ${outdirName}/script-builder/web`);
-  }
-}
-
-async function buildBuilderWeb() {
-  log('Building script builder web app');
-  const source = resolve(ROOT, 'src/script-builder-app/main.tsx');
-  const outdir = resolve(ROOT, 'src/script-builder/web');
-  await build({
-    entryPoints: [source],
-    outfile: resolve(outdir, 'app.js'),
-    bundle: true,
-    platform: 'browser',
-    format: 'esm',
-    target: 'es2022',
-    jsx: 'automatic',
-    sourcemap: true,
-    logLevel: 'info',
-  });
-}
-
 async function buildDev() {
   log('Building dev (dist/ with ink)');
-  await buildBuilderWeb();
   run('pnpm tsup');
-  copyBuilderAssets('dist');
   console.log('  Output: dist/cli.js');
 }
 
@@ -106,7 +77,6 @@ const inkStubPlugin = {
 
 async function buildExe() {
   log('Building exe bundle (dist-exe/ without ink)');
-  await buildBuilderWeb();
 
   const outdir = resolve(ROOT, 'dist-exe');
   if (!existsSync(outdir)) mkdirSync(outdir, { recursive: true });
@@ -119,7 +89,7 @@ async function buildExe() {
     platform: 'node',
     bundle: true,
     splitting: false,
-    external: ['xlsx'],
+    external: ['playwright-core', 'xlsx'],
     plugins: [inkStubPlugin],
   });
   copyBuilderAssets('dist-exe');
