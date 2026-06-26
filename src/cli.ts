@@ -7,6 +7,7 @@ import { getUi } from './ui/ui-provider.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
 import { CURRENT_VERSION, maybeRunUpdateCheck } from './update/index.js';
+import type { BrowserManagerKind } from './browser-manager/index.js';
 
 const program = new Command();
 
@@ -19,7 +20,9 @@ type CliOptions = {
   api?: string;
   token?: string;
   profile?: string;
+  manager?: BrowserManagerKind;
   headless?: boolean;
+  winSize?: string;
   connectTimeout?: string;
   commandTimeout?: string;
   script?: string;
@@ -44,6 +47,19 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
   return overrides;
 }
 
+function parseManager(value: string): BrowserManagerKind {
+  if (value === 'donut' || value === 'gpm') return value;
+  throw new Error(`Invalid --manager value "${value}". Expected donut or gpm.`);
+}
+
+function validateWinSize(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+,\d+$/.test(value)) {
+    throw new Error(`Invalid --win-size value "${value}". Expected width,height (e.g. 800,1000).`);
+  }
+  return value;
+}
+
 async function selectRootAction(): Promise<RootAction | undefined> {
   const ui = await getUi();
   return ui.runListPicker<RootAction>({
@@ -58,10 +74,12 @@ async function selectRootAction(): Promise<RootAction | undefined> {
 
 function addCommonOptions(cmd: Command): Command {
   return cmd
-    .option('--api <url>', 'Donut API base URL (default: http://127.0.0.1:10108)')
+    .option('--manager <manager>', 'Browser manager: donut or gpm (default: donut)', parseManager)
+    .option('--api <url>', 'Browser manager API base URL (default: Donut http://127.0.0.1:10108, GPM http://127.0.0.1:19995)')
     .option('--token <token>', 'Donut API bearer token')
     .option('--profile <profile-id>', 'Skip interactive profile selection')
     .option('--headless', 'Launch profile headless')
+    .option('--win-size <width,height>', 'GPMLogin browser window size (e.g. 800,1000)')
     .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
     .option('--script <path>', 'GPM Automate .gscript path')
@@ -74,6 +92,7 @@ initAbortHandler();
 
 async function runWithOptions(options: CliOptions): Promise<void> {
   const config = loadConfig({
+    manager: options.manager,
     api: options.api,
     token: options.token,
     profile: options.profile,
@@ -110,8 +129,10 @@ async function runWithOptions(options: CliOptions): Promise<void> {
     const runnerOptions: GscriptRunnerOptions = {
       apiBaseUrl: config.apiBaseUrl,
       apiToken: config.apiToken,
+      manager: config.manager,
       profileId: config.profileId,
       headless: config.headless,
+      winSize: validateWinSize(options.winSize),
       bidiConnectTimeoutMs: config.bidiConnectTimeoutMs,
       bidiCommandTimeoutMs: config.bidiCommandTimeoutMs,
       scriptSpec: selectedScript,

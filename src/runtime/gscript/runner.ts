@@ -1,5 +1,5 @@
-import { DonutApiClient } from '../../donut/api-client.js';
 import { selectRunnableBrowserProfile } from '../../donut/profile-selector.js';
+import { createBrowserManager, type BrowserManagerKind } from '../../browser-manager/index.js';
 import { coerceAndValidateInputs, stringifyInputValues } from '../input-values.js';
 import { runInputForm } from '../../ui/run-input-form.js';
 import { CliBackError, formatError, isCliBackError } from '../../utils/errors.js';
@@ -18,10 +18,12 @@ import { executeGscriptBlock } from './executor.js';
 import { loadGscriptProgram, toInputDefinitions } from './parser.js';
 
 export type GscriptRunnerOptions = {
+  manager: BrowserManagerKind;
   apiBaseUrl: string;
   apiToken?: string;
   profileId?: string;
   headless: boolean;
+  winSize?: string;
   bidiConnectTimeoutMs: number;
   bidiCommandTimeoutMs: number;
   scriptSpec: string;
@@ -73,7 +75,12 @@ function hasExecutableNodes(block: GscriptBlockNode): boolean {
 
 export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise<void> {
   const signal = options.signal;
-  const donut = new DonutApiClient(options.apiBaseUrl, options.apiToken, signal);
+  const manager = createBrowserManager({
+    kind: options.manager,
+    apiBaseUrl: options.apiBaseUrl,
+    apiToken: options.apiToken,
+    signal,
+  });
   const log = (...args: unknown[]) => logger.info(args.join(' '));
   const program = await loadGscriptProgram(options.scriptSpec);
   const inputDefinitions = toInputDefinitions(program.inputs);
@@ -94,7 +101,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       if (isCliBackError(error)) throw new CliBackError('Back', { inputsState: currentInputsState });
       throw error;
     }
-    profile = await donut.getProfile(options.profileId);
+    profile = await manager.getProfile(options.profileId);
   } else {
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -108,9 +115,13 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
         throw error;
       }
 
-      const profiles = await donut.listProfiles();
+      const profiles = await manager.listProfiles();
       try {
-        profile = await selectRunnableBrowserProfile(profiles, currentProfileId);
+        profile = await selectRunnableBrowserProfile(profiles, {
+          defaultProfileId: currentProfileId,
+          managerName: manager.displayName,
+          supportedBrowsers: manager.supportedBrowsers,
+        });
         currentProfileId = profile.id;
         profileNeedsDetailFetch = true;
       } catch (error) {
@@ -128,7 +139,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
   }
 
   if (profileNeedsDetailFetch) {
-    profile = await donut.getProfile(profile!.id);
+    profile = await manager.getProfile(profile!.id);
   }
   inputs = { ...inputs!, ...profileRuntimeInputs(profile) };
   let args: Record<string, string> = stringifyInputValues(inputs);
@@ -159,11 +170,16 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
     const shouldLaunchProfile = beforeSignal !== 'stop' && hasExecutableNodes(program.mainLogic);
     if (shouldLaunchProfile) {
       const session = await launchProfileWithRetry({
-        donut,
-        cleanupDonut: new DonutApiClient(options.apiBaseUrl, options.apiToken),
+        manager,
+        cleanupManager: createBrowserManager({
+          kind: options.manager,
+          apiBaseUrl: options.apiBaseUrl,
+          apiToken: options.apiToken,
+        }),
         profileId: profile.id,
         browser: profile.browser,
         headless: options.headless,
+        winSize: options.winSize,
         bidiConnectTimeoutMs: options.bidiConnectTimeoutMs,
         bidiCommandTimeoutMs: options.bidiCommandTimeoutMs,
         signal,
@@ -195,8 +211,12 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       await bidi?.close().catch(() => {});
       await playwrightBrowser?.close().catch(() => {});
       if (launched) {
-        const cleanupDonut = new DonutApiClient(options.apiBaseUrl, options.apiToken);
-        await cleanupDonut.killProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
+        const cleanupManager = createBrowserManager({
+          kind: options.manager,
+          apiBaseUrl: options.apiBaseUrl,
+          apiToken: options.apiToken,
+        });
+        await cleanupManager.closeProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
       }
 
       try {

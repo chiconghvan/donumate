@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+### New features
+
+- Added `--manager gpm` to launch and clean up profiles through GPMLogin instead of Donut Browser.
+- Added `--win-size <width,height>` and wired `--headless` through GPMLogin `addination_args`.
+- GPMLogin profiles now attach through Playwright CDP while keeping the existing gscript runtime unchanged.
+
+### Changes
+
+- CLI profile selection and launch flow now route through a browser-manager adapter so Donut and GPMLogin share the same runtime.
+- GPMLogin profile lookup now falls back between `/api/v3/profiles/{id}` and `/api/v3/profile/{id}`.
+
 ## 0.1.3
 
 ### Changes

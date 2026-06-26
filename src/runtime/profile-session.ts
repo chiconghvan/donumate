@@ -1,4 +1,3 @@
-import { DonutApiClient } from '../donut/api-client.js';
 import { BidiClient } from '../bidi/bidi-client.js';
 import { PageAutomation } from './page-automation.js';
 import { connectPlaywrightToCdp, PlaywrightPageAutomation } from './playwright-page-automation.js';
@@ -8,6 +7,7 @@ import { sleep } from '../utils/retry.js';
 import type { Browser } from 'playwright-core';
 import type { RunProfileResponse } from '../donut/api-types.js';
 import type { BrowserPageAutomation } from './page-automation-types.js';
+import type { BrowserProfileManager } from '../browser-manager/index.js';
 
 const PROFILE_LAUNCH_MAX_ATTEMPTS = 3;
 const PROFILE_LAUNCH_RETRY_DELAY_MS = 10000;
@@ -17,11 +17,12 @@ export function clearScreen(): void {
 }
 
 export type LaunchProfileOptions = {
-  donut: DonutApiClient;
-  cleanupDonut: DonutApiClient;
+  manager: BrowserProfileManager;
+  cleanupManager: BrowserProfileManager;
   profileId: string;
   browser: string;
   headless: boolean;
+  winSize?: string;
   bidiConnectTimeoutMs: number;
   bidiCommandTimeoutMs: number;
   signal?: AbortSignal;
@@ -45,16 +46,18 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
 
     try {
       logger.info(`  Launch profile attempt ${attempt}/${PROFILE_LAUNCH_MAX_ATTEMPTS}...`);
-      const run = await options.donut.runProfile(options.profileId, {
-        url: 'about:blank',
+      const launch = await options.manager.launchProfile(options.profileId, {
         headless: options.headless,
+        winSize: options.winSize,
       });
+      const run = launch.run;
       didLaunch = true;
 
-      const readyProfile = await options.donut.waitForProfileReady(options.profileId, { timeoutMs: 30000 });
-      logger.info(`  Browser ready (pid=${readyProfile.process_id})`);
+      if (launch.readyMessage) {
+        logger.info(launch.readyMessage);
+      }
 
-      if (isWeyfernBrowser(options.browser)) {
+      if (launch.runtime === 'playwright' || isWeyfernBrowser(options.browser)) {
         playwrightBrowser = await connectPlaywrightWithRetry(run.remote_debugging_port, options.bidiConnectTimeoutMs, options.signal);
         const page = new PlaywrightPageAutomation(playwrightBrowser);
         await page.init();
@@ -69,7 +72,7 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
       return { run, runtime: 'bidi', bidi, page };
     } catch (error) {
       lastError = error;
-      await cleanupFailedLaunch(options.cleanupDonut, options.profileId, bidi, playwrightBrowser, didLaunch);
+      await cleanupFailedLaunch(options.cleanupManager, options.profileId, bidi, playwrightBrowser, didLaunch);
 
       if (options.signal?.aborted || attempt === PROFILE_LAUNCH_MAX_ATTEMPTS) {
         throw error;
@@ -84,7 +87,7 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
 }
 
 async function cleanupFailedLaunch(
-  donut: DonutApiClient,
+  manager: BrowserProfileManager,
   profileId: string,
   bidi: BidiClient | undefined,
   playwrightBrowser: Browser | undefined,
@@ -93,7 +96,7 @@ async function cleanupFailedLaunch(
   await bidi?.close().catch(() => {});
   await playwrightBrowser?.close().catch(() => {});
   if (didLaunch) {
-    await donut.killProfile(profileId).catch((error: unknown) => logger.error(formatError(error)));
+    await manager.closeProfile(profileId).catch((error: unknown) => logger.error(formatError(error)));
   }
 }
 

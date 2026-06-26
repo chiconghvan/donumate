@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { z } from 'zod';
 import { AppError } from '../utils/errors.js';
 import type { AppConfig } from './types.js';
+import type { BrowserManagerKind } from '../browser-manager/index.js';
 
 const booleanSchema = z.union([z.boolean(), z.string()]).transform((value) => {
   if (typeof value === 'boolean') return value;
@@ -17,6 +18,7 @@ const numberSchema = z.union([z.number(), z.string()]).transform((value) => {
 });
 
 const configSchema = z.object({
+  manager: z.enum(['donut', 'gpm']),
   apiBaseUrl: z.string().url(),
   apiToken: z.string().optional(),
   profileId: z.string().optional(),
@@ -25,13 +27,19 @@ const configSchema = z.object({
   bidiCommandTimeoutMs: numberSchema,
 });
 
-export type ConfigOverrides = Partial<Record<'api' | 'token' | 'profile' | 'headless' | 'connectTimeout' | 'commandTimeout', string | boolean>>;
+export type ConfigOverrides = Partial<Record<'api' | 'token' | 'profile' | 'headless' | 'connectTimeout' | 'commandTimeout', string | boolean>> & {
+  manager?: BrowserManagerKind;
+};
 
 export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
+  const manager = overrides.manager ?? 'donut';
+  const defaultApiBaseUrl = manager === 'gpm' ? 'http://127.0.0.1:19995' : 'http://127.0.0.1:10108';
+  const envApiBaseUrl = manager === 'gpm' ? process.env.GPM_API_BASE_URL : process.env.DONUT_API_BASE_URL;
   let parsed;
   try {
     parsed = configSchema.parse({
-      apiBaseUrl: overrides.api ?? process.env.DONUT_API_BASE_URL ?? 'http://127.0.0.1:10108',
+      manager,
+      apiBaseUrl: overrides.api ?? envApiBaseUrl ?? defaultApiBaseUrl,
       apiToken: (overrides.token ?? process.env.DONUT_API_TOKEN) || undefined,
       profileId: (overrides.profile ?? process.env.DONUT_PROFILE_ID) || undefined,
       headless: overrides.headless ?? process.env.DONUT_HEADLESS ?? process.env.CAMOUFOX_HEADLESS ?? false,

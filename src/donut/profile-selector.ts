@@ -2,11 +2,17 @@ import { AppError, CliBackError } from '../utils/errors.js';
 import { globalAbort } from '../utils/abort.js';
 import { getUi } from '../ui/ui-provider.js';
 import type { ApiProfile } from './api-types.js';
+import { DONUT_SUPPORTED_BROWSER_TYPES } from './browser-types.js';
 
-const SUPPORTED_BROWSER_TYPES = new Set(['camoufox', 'weyfern', 'wayfern']);
+type ProfileSelectorOptions = {
+  defaultProfileId?: string;
+  managerName?: string;
+  supportedBrowsers?: Set<string>;
+};
 
-export function runnableBrowserProfiles(profiles: ApiProfile[]): ApiProfile[] {
-  return profiles.filter((profile) => SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase()));
+export function runnableBrowserProfiles(profiles: ApiProfile[], supportedBrowsers?: Set<string>): ApiProfile[] {
+  if (!supportedBrowsers) return profiles;
+  return profiles.filter((profile) => supportedBrowsers.has(profile.browser.toLowerCase()));
 }
 
 function profileBrowserLabel(profile: ApiProfile): string {
@@ -14,13 +20,14 @@ function profileBrowserLabel(profile: ApiProfile): string {
   return browser === 'wayfern' ? 'weyfern' : browser;
 }
 
-export async function selectRunnableBrowserProfile(profiles: ApiProfile[], defaultProfileId?: string): Promise<ApiProfile> {
+export async function selectRunnableBrowserProfile(profiles: ApiProfile[], options: ProfileSelectorOptions = {}): Promise<ApiProfile> {
   if (process.stdin.isTTY) {
     process.stdin.resume();
   }
-  const choices = runnableBrowserProfiles(profiles);
+  const choices = runnableBrowserProfiles(profiles, options.supportedBrowsers);
+  const managerName = options.managerName ?? 'Donut Browser';
   if (choices.length === 0) {
-    throw new AppError('No Camoufox/Weyfern profiles found. Create one in Donut Browser or check API at http://127.0.0.1:10108');
+    throw new AppError(`No runnable profiles found. Create one in ${managerName} or check its API.`);
   }
 
   const selectChoices = [
@@ -35,7 +42,7 @@ export async function selectRunnableBrowserProfile(profiles: ApiProfile[], defau
   const selectedVal = await ui.runListPicker({
     title: `Select browser profile (${choices.length} found)`,
     options: selectChoices,
-    initialValue: defaultProfileId ?? '__back__',
+    initialValue: options.defaultProfileId ?? '__back__',
   });
 
   if (selectedVal === undefined || selectedVal === '__back__') {
@@ -50,9 +57,9 @@ export async function selectRunnableBrowserProfile(profiles: ApiProfile[], defau
 export function findProfileOrThrow(profiles: ApiProfile[], profileId: string): ApiProfile {
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) {
-    const available = runnableBrowserProfiles(profiles).map((p) => `  ${p.id} - ${p.name} | ${profileBrowserLabel(p)}`).join('\n');
+    const available = runnableBrowserProfiles(profiles, DONUT_SUPPORTED_BROWSER_TYPES).map((p) => `  ${p.id} - ${p.name} | ${profileBrowserLabel(p)}`).join('\n');
     throw new AppError(`Profile not found: ${profileId}\nAvailable Camoufox/Weyfern profiles:\n${available || '  (none)'}`);
   }
-  if (!SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase())) throw new AppError(`Profile is not Camoufox/Weyfern: ${profileId} (browser=${profile.browser})`);
+  if (!DONUT_SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase())) throw new AppError(`Profile is not Camoufox/Weyfern: ${profileId} (browser=${profile.browser})`);
   return profile;
 }
