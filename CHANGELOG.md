@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1
+
+### Bug fixes
+
+- Fixed `pnpm build:exe` by removing the stale script-builder asset copy step after the script-builder refactor.
+
+### Changes
+
+- Added `deploy.bat` to `.gitignore` for local release automation.
+- Replaced the old Donut Browser API guide with the GPMLogin API document.
+
 ## 0.4.0
 
 ### New features

@@ -92,7 +92,6 @@ async function buildExe() {
     external: ['playwright-core', 'xlsx'],
     plugins: [inkStubPlugin],
   });
-  copyBuilderAssets('dist-exe');
   console.log('  Output: dist-exe/cli.js');
 }
 
