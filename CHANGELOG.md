@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.1 - 2026-06-29
+
+### Improvements
+- Added shared Ghost Cursor-style human mouse movement runtime for browser automation.
+- Applied human mouse movement consistently to BiDi and Playwright/CDP backends.
+- Click targets now use random points inside element bounding boxes instead of center-biased jitter.
+- Mouse paths now use Cubic Bezier control points, Fitts' Law step sizing, local-speed timing, and long-distance overshoot correction.
+- Click timing now includes randomized hesitate and mouse down/up hold delays.
+
+### Refactor
+- Moved reusable mouse math, path generation, timing, overshoot, clamping, and random helpers into `src/runtime/human-mouse.ts`.
+- Removed duplicated mouse path logic from `src/runtime/page-automation.ts` and `src/runtime/playwright-page-automation.ts`.
+
+### Files Changed
+- `src/runtime/human-mouse.ts` - added shared human mouse movement helper.
+- `src/runtime/page-automation.ts` - switched BiDi mouse movement and click logic to shared human path runtime.
+- `src/runtime/playwright-page-automation.ts` - switched Playwright/CDP mouse movement and click logic to shared human path runtime.
+- `package.json` - bumped version from `0.5.0` to `0.5.1`.
+- `CHANGELOG.md` - documented `0.5.1` changes.
+
 ## 0.5.0 - 2026-06-29
 
 ### Major Changes

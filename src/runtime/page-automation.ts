@@ -5,6 +5,7 @@ import type { BidiKeyAction, BidiPointerAction, BrowsingContextInfo } from '../b
 import { countInteractiveElementsExpression, type InteractiveElementsResult, type ButtonInfo } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
+import { clampPoint, generateHumanMousePath, overshootPoint, randomInt, randomPointInBox, randomStartPoint, type PathPoint, type Point, type TargetPoint } from './human-mouse.js';
 import { writeHostClipboardText } from './host-clipboard.js';
 import type { BrowserPageAutomation, HumanTypingOptions } from './page-automation-types.js';
 
@@ -89,11 +90,6 @@ const KEY_CODES: Record<string, string> = {
 };
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
-
-type Point = { x: number; y: number };
-type Viewport = { width: number; height: number };
-type TargetPoint = Point & { viewport: Viewport; scrolled: boolean };
-type PathPoint = Point & { duration: number };
 
 export class PageAutomation implements BrowserPageAutomation {
   private contextId?: string;
@@ -446,27 +442,37 @@ export class PageAutomation implements BrowserPageAutomation {
       const inViewport = isInViewport(rect);
       const ready = stillVisible && inViewport;
       if (!ready) return JSON.stringify({ ok: false, reason: 'Element is not visible or not in viewport.' });
-      const marginX = Math.min(Math.max(rect.width * 0.2, 1), 12);
-      const marginY = Math.min(Math.max(rect.height * 0.2, 1), 12);
-      const jitterX = rect.width > 8 ? (Math.random() * 2 - 1) * Math.max(0, rect.width / 2 - marginX) * 0.45 : 0;
-      const jitterY = rect.height > 8 ? (Math.random() * 2 - 1) * Math.max(0, rect.height / 2 - marginY) * 0.45 : 0;
-      const x = Math.min(Math.max(rect.left + rect.width / 2 + jitterX, 0), Math.max(0, viewport.width - 1));
-      const y = Math.min(Math.max(rect.top + rect.height / 2 + jitterY, 0), Math.max(0, viewport.height - 1));
-      return JSON.stringify({ ok: true, x, y, viewport, scrolled });
+      const box = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      return JSON.stringify({ ok: true, viewport, scrolled, box });
     })()`);
     const result = JSON.parse(String(raw)) as ({ ok: true } & TargetPoint) | { ok: false; reason: string };
     if (!result.ok) throw new Error(`XPath not found or not ${actionName}: ${xpath}. ${result.reason}`);
-    return { x: result.x, y: result.y, viewport: result.viewport, scrolled: result.scrolled };
+    const point = randomPointInBox(result.box, result.viewport, 30);
+    return { ...point, viewport: result.viewport, scrolled: result.scrolled, box: result.box };
   }
 
   private async moveMouseTo(target: TargetPoint): Promise<void> {
     if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     await this.ensureVirtualCursor();
 
-    const start = this.clampPoint(this.mousePosition ?? this.randomStartPoint(target), target.viewport);
-    const path = this.generateMousePath(start, target, target.viewport);
+    const start = clampPoint(this.mousePosition ?? randomStartPoint(target), target.viewport);
     await this.showVirtualCursor(start, 0);
 
+    const distance = Math.hypot(target.x - start.x, target.y - start.y);
+    if (distance > 500) {
+      const overshot = overshootPoint(target, target.viewport, 120);
+      await this.moveMouseAlongPath(generateHumanMousePath(start, overshot, { targetWidth: target.box.width, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(overshot, target, { targetWidth: target.box.width, spreadOverride: 10, viewport: target.viewport }));
+    } else {
+      await this.moveMouseAlongPath(generateHumanMousePath(start, target, { targetWidth: target.box.width, viewport: target.viewport }));
+    }
+
+    this.mousePosition = { x: target.x, y: target.y };
+    await this.showVirtualCursor(target, 0);
+  }
+
+  private async moveMouseAlongPath(path: PathPoint[]): Promise<void> {
+    if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     for (const point of path) {
       await this.showVirtualCursor(point, point.duration);
       await this.bidi.performActions(this.contextId, [
@@ -478,9 +484,6 @@ export class PageAutomation implements BrowserPageAutomation {
         },
       ]);
     }
-
-    this.mousePosition = { x: target.x, y: target.y };
-    await this.showVirtualCursor(target, 0);
   }
 
   private async clickCurrentMousePosition(point: Point): Promise<void> {
@@ -492,65 +495,14 @@ export class PageAutomation implements BrowserPageAutomation {
         parameters: { pointerType: 'mouse' },
         actions: [
           { type: 'pointerMove', x: Math.round(point.x), y: Math.round(point.y), duration: 0, origin: 'viewport' },
+          { type: 'pause', duration: randomInt(20, 120) },
           { type: 'pointerDown', button: 0 },
-          { type: 'pause', duration: this.randomInt(35, 95) },
+          { type: 'pause', duration: randomInt(30, 140) },
           { type: 'pointerUp', button: 0 },
         ],
       },
     ]);
     await this.bidi.releaseActions(this.contextId);
-  }
-
-  private generateMousePath(start: Point, target: Point, viewport: Viewport): PathPoint[] {
-    const distance = Math.hypot(target.x - start.x, target.y - start.y);
-    if (distance < 1) return [{ ...target, duration: this.randomInt(20, 45) }];
-
-    const duration = this.randomInt(Math.min(900, Math.max(220, Math.round(distance * 0.7))), Math.min(1300, Math.max(360, Math.round(distance * 1.2))));
-    const steps = Math.max(10, Math.min(48, Math.ceil(distance / this.randomFloat(14, 24))));
-    const dx = target.x - start.x;
-    const dy = target.y - start.y;
-    const nx = -dy / distance;
-    const ny = dx / distance;
-    const curve = this.randomFloat(-0.35, 0.35) * Math.min(220, distance * 0.45);
-    const p1 = {
-      x: start.x + dx * this.randomFloat(0.2, 0.38) + nx * curve,
-      y: start.y + dy * this.randomFloat(0.2, 0.38) + ny * curve,
-    };
-    const p2 = {
-      x: start.x + dx * this.randomFloat(0.62, 0.82) - nx * curve * this.randomFloat(0.45, 0.9),
-      y: start.y + dy * this.randomFloat(0.62, 0.82) - ny * curve * this.randomFloat(0.45, 0.9),
-    };
-
-    const points: PathPoint[] = [];
-    const useOvershoot = distance > 120 && Math.random() < 0.25;
-    const finalTarget = useOvershoot ? this.overshootPoint(start, target, viewport) : target;
-    for (let i = 1; i <= steps; i += 1) {
-      const t = i / steps;
-      const eased = easeInOutCubic(t);
-      const base = cubicBezier(start, p1, p2, finalTarget, eased);
-      const jitterScale = Math.sin(Math.PI * t) * Math.min(5, distance * 0.015);
-      const jittered = this.clampPoint({
-        x: base.x + this.randomFloat(-jitterScale, jitterScale),
-        y: base.y + this.randomFloat(-jitterScale, jitterScale),
-      }, viewport);
-      points.push({ ...jittered, duration: Math.max(5, Math.round(duration / steps + this.randomFloat(-4, 8))) });
-    }
-
-    if (useOvershoot) {
-      const settleSteps = this.randomInt(3, 6);
-      const overshot = points[points.length - 1] ?? finalTarget;
-      for (let i = 1; i <= settleSteps; i += 1) {
-        const t = easeOutQuad(i / settleSteps);
-        points.push({
-          x: overshot.x + (target.x - overshot.x) * t,
-          y: overshot.y + (target.y - overshot.y) * t,
-          duration: this.randomInt(18, 42),
-        });
-      }
-    }
-
-    points.push({ x: target.x, y: target.y, duration: this.randomInt(10, 25) });
-    return points;
   }
 
   private async ensureVirtualCursor(): Promise<void> {
@@ -597,41 +549,6 @@ export class PageAutomation implements BrowserPageAutomation {
     };
   }
 
-  private randomStartPoint(target: TargetPoint): Point {
-    const nearTarget = Math.random() < 0.35;
-    if (nearTarget) {
-      return this.clampPoint({
-        x: target.x + this.randomFloat(-180, 180),
-        y: target.y + this.randomFloat(-140, 140),
-      }, target.viewport);
-    }
-    return {
-      x: this.randomFloat(target.viewport.width * 0.25, target.viewport.width * 0.75),
-      y: this.randomFloat(target.viewport.height * 0.25, target.viewport.height * 0.75),
-    };
-  }
-
-  private overshootPoint(start: Point, target: Point, viewport: Viewport): Point {
-    const distance = Math.hypot(target.x - start.x, target.y - start.y);
-    if (distance < 1) return target;
-    const amount = this.randomFloat(3, 12);
-    return this.clampPoint({
-      x: target.x + ((target.x - start.x) / distance) * amount + this.randomFloat(-3, 3),
-      y: target.y + ((target.y - start.y) / distance) * amount + this.randomFloat(-3, 3),
-    }, viewport);
-  }
-
-  private clampPoint(point: Point, viewport: Viewport): Point {
-    return {
-      x: Math.min(Math.max(point.x, 0), Math.max(0, viewport.width - 1)),
-      y: Math.min(Math.max(point.y, 0), Math.max(0, viewport.height - 1)),
-    };
-  }
-
-  private randomFloat(min: number, max: number): number {
-    return min + Math.random() * (max - min);
-  }
-
   async sendKey(...keys: string[]): Promise<void> {
     if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     const mapped = keys.map((k) => KEY_CODES[k.toLowerCase()] ?? k);
@@ -646,7 +563,7 @@ export class PageAutomation implements BrowserPageAutomation {
   }
 
   private randomInt(min: number, max: number): number {
-    return Math.floor(this.randomFloat(min, max + 1));
+    return randomInt(min, max);
   }
 
   private async humanPause(minMs = 200, maxMs = 700): Promise<void> {
@@ -665,22 +582,6 @@ function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[]
     if (context.children?.length) result.push(...flattenContexts(context.children));
   }
   return result;
-}
-
-function cubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
-  const mt = 1 - t;
-  return {
-    x: mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x,
-    y: mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y,
-  };
-}
-
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2;
-}
-
-function easeOutQuad(t: number): number {
-  return 1 - (1 - t) * (1 - t);
 }
 
 function splitGraphemes(text: string): string[] {
