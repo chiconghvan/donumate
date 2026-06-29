@@ -1,6 +1,6 @@
 {
   "name": "donumate",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Standalone CLI for launching Donut browser profiles and automating GPM .gscript workflows over WebDriver BiDi.",
   "type": "module",
   "bin": {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.2 - 2026-06-29
+
+### Improvements
+- BiDi now runs only for Camoufox profiles.
+- Cloak and Wayfern/Weyfern profiles now use Playwright/CDP automation.
+- Donut browser profile picker and validation now accept Cloak profiles.
+
+### Files Changed
+- `src/runtime/profile-session.ts` - switched automation engine selection to BiDi for Camoufox only and Playwright for other supported browsers.
+- `src/donut/browser-types.ts` - added Cloak to supported Donut browser types.
+- `src/donut/profile-selector.ts` - updated supported-browser labels and validation text.
+- `package.json` - bumped version from `0.5.1` to `0.5.2`.
+- `CHANGELOG.md` - documented `0.5.2` changes.
+
 ## 0.5.1 - 2026-06-29
 
 ### Improvements

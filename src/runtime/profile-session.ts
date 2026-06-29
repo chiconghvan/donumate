@@ -61,7 +61,7 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
       logger.info(`  Waiting ${PROFILE_CONNECT_DELAY_MS}ms for profile startup before connecting...`);
       await sleep(PROFILE_CONNECT_DELAY_MS, options.signal);
 
-      if (launch.runtime === 'playwright' || isWeyfernBrowser(options.browser)) {
+      if (launch.runtime === 'playwright' || !isCamoufoxBrowser(options.browser)) {
         playwrightBrowser = await connectPlaywrightWithRetry(run.remote_debugging_port, options.bidiConnectTimeoutMs, options.signal);
         const page = new PlaywrightPageAutomation(playwrightBrowser);
         await page.init();
@@ -143,7 +143,7 @@ async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string, signal?: Ab
   if (lastError) throw lastError;
 }
 
-function isWeyfernBrowser(browser: string): boolean {
+function isCamoufoxBrowser(browser: string): boolean {
   const normalized = browser.toLowerCase();
-  return normalized === 'weyfern' || normalized === 'wayfern';
+  return normalized === 'camoufox';
 }

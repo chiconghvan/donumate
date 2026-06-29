@@ -58,8 +58,8 @@ export function findProfileOrThrow(profiles: ApiProfile[], profileId: string): A
   const profile = profiles.find((item) => item.id === profileId);
   if (!profile) {
     const available = runnableBrowserProfiles(profiles, DONUT_SUPPORTED_BROWSER_TYPES).map((p) => `  ${p.id} - ${p.name} | ${profileBrowserLabel(p)}`).join('\n');
-    throw new AppError(`Profile not found: ${profileId}\nAvailable Camoufox/Weyfern profiles:\n${available || '  (none)'}`);
+    throw new AppError(`Profile not found: ${profileId}\nAvailable Camoufox/Cloak/Weyfern profiles:\n${available || '  (none)'}`);
   }
-  if (!DONUT_SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase())) throw new AppError(`Profile is not Camoufox/Weyfern: ${profileId} (browser=${profile.browser})`);
+  if (!DONUT_SUPPORTED_BROWSER_TYPES.has(profile.browser.toLowerCase())) throw new AppError(`Profile is not Camoufox/Cloak/Weyfern: ${profileId} (browser=${profile.browser})`);
   return profile;
 }
