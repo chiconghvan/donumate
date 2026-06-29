@@ -6,6 +6,7 @@ node_modules/
 /dist-exe/
 /release/
 /convert_site/
+/scripts/
 
 # Local environment and logs
 .env

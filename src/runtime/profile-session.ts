@@ -4,6 +4,7 @@ import { connectPlaywrightToCdp, PlaywrightPageAutomation } from './playwright-p
 import { formatError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { sleep } from '../utils/retry.js';
+import WebSocket from 'ws';
 import type { Browser } from 'playwright-core';
 import type { RunProfileResponse } from '../donut/api-types.js';
 import type { BrowserPageAutomation } from './page-automation-types.js';
@@ -12,6 +13,7 @@ import type { BrowserProfileManager } from '../browser-manager/index.js';
 const PROFILE_LAUNCH_MAX_ATTEMPTS = 3;
 const PROFILE_LAUNCH_RETRY_DELAY_MS = 10000;
 const PROFILE_CONNECT_DELAY_MS = 6000;
+const EP_ENDPOINT_PROBE_INTERVAL_MS = 500;
 
 export function clearScreen(): void {
   process.stdout.write('\x1b[2J\x1b[H');
@@ -62,6 +64,7 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
       await sleep(PROFILE_CONNECT_DELAY_MS, options.signal);
 
       if (launch.runtime === 'playwright' || !isCamoufoxBrowser(options.browser)) {
+        await waitForPlaywrightCdpEndpoint(run.remote_debugging_port, options.bidiConnectTimeoutMs, options.signal);
         playwrightBrowser = await connectPlaywrightWithRetry(run.remote_debugging_port, options.bidiConnectTimeoutMs, options.signal);
         const page = new PlaywrightPageAutomation(playwrightBrowser);
         await page.init();
@@ -69,6 +72,7 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
       }
 
       const wsUrl = run.ws_url ?? `ws://127.0.0.1:${run.remote_debugging_port}/session`;
+      await waitForBidiEndpoint(wsUrl, options.bidiConnectTimeoutMs, options.signal);
       bidi = new BidiClient(options.bidiConnectTimeoutMs, options.bidiCommandTimeoutMs, options.signal);
       await connectBidiWithRetry(bidi, wsUrl, options.signal);
       const page = new PageAutomation(bidi);
@@ -146,4 +150,77 @@ async function connectBidiWithRetry(bidi: BidiClient, wsUrl: string, signal?: Ab
 function isCamoufoxBrowser(browser: string): boolean {
   const normalized = browser.toLowerCase();
   return normalized === 'camoufox';
+}
+
+async function waitForPlaywrightCdpEndpoint(remoteDebuggingPort: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const url = `http://127.0.0.1:${remoteDebuggingPort}/json/version`;
+
+  while (true) {
+    if (signal?.aborted) throw new Error('Aborted');
+
+    try {
+      const response = await fetch(url, { signal });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Wait until endpoint actually answers.
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for CDP endpoint: ${url}`);
+    }
+
+    await sleep(EP_ENDPOINT_PROBE_INTERVAL_MS, signal);
+  }
+}
+
+async function waitForBidiEndpoint(wsUrl: string, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    if (signal?.aborted) throw new Error('Aborted');
+
+    try {
+      await probeWebSocketOpen(wsUrl, signal);
+      return;
+    } catch {
+      // Wait until WebSocket endpoint actually opens.
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for BiDi endpoint: ${wsUrl}`);
+    }
+
+    await sleep(EP_ENDPOINT_PROBE_INTERVAL_MS, signal);
+  }
+}
+
+async function probeWebSocketOpen(wsUrl: string, signal?: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(wsUrl);
+
+    const onAbort = () => {
+      socket.terminate();
+      reject(new Error('Aborted'));
+    };
+
+    const cleanup = () => {
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    socket.once('open', () => {
+      cleanup();
+      socket.close();
+      resolve();
+    });
+
+    socket.once('error', (error) => {
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    });
+  });
 }
