@@ -4,7 +4,7 @@ import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { countInteractiveElementsExpression, type ButtonInfo, type InteractiveElementsResult } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
-import { clampPoint, generateHumanMousePath, overshootPoint, randomInt, randomPointInBox, randomStartPoint, type Point, type TargetPoint } from './human-mouse.js';
+import { clampPoint, generateHumanMousePath, overshootPoint, overshootRadiusForBox, randomInt, randomPointInBox, randomStartPoint, type Point, type TargetPoint } from './human-mouse.js';
 import { writeHostClipboardText } from './host-clipboard.js';
 import type { BrowserPageAutomation, HumanTypingOptions } from './page-automation-types.js';
 
@@ -26,8 +26,6 @@ const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
 const CURSOR_SPEED_SCALE = 1.7;
-const CURSOR_MIN_STEPS = Math.round(25 / CURSOR_SPEED_SCALE);
-const CURSOR_MAX_STEPS = Math.round(80 / CURSOR_SPEED_SCALE);
 
 const KEY_NAMES: Record<string, string> = {
   backspace: 'Backspace',
@@ -375,13 +373,13 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
     await this.showVirtualCursor(start, 0);
 
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
-    const overshot = distance > 500 ? overshootPoint(target, target.viewport, 120) : undefined;
+    const overshot = distance > 500 ? overshootPoint(target, target.viewport, overshootRadiusForBox(target.box)) : undefined;
     const paths = overshot
       ? [
-        generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }),
-        generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }),
+        generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, viewport: target.viewport }),
+        generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, viewport: target.viewport }),
       ]
-      : [generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport })];
+      : [generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, viewport: target.viewport })];
 
     for (const path of paths) {
       for (const point of path) {

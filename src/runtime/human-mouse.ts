@@ -21,7 +21,7 @@ export function generateHumanMousePath(start: Point, end: Point, options: PathOp
   const minSteps = options.minSteps ?? 25;
   const maxSteps = options.maxSteps ?? 80;
   const spread = options.spreadOverride ?? clamp(distance, 2, 200);
-  const speedFactor = options.moveSpeed !== undefined && options.moveSpeed > 0 ? 25 / options.moveSpeed : randomFloat(0.5, 1);
+  const speedFactor = randomFloat(0.5, 1);
   const baseTime = speedFactor * minSteps;
   const steps = clamp(Math.ceil((Math.log2(fitts(distance, targetWidth) + 1) + baseTime) * 3), 2, maxSteps);
   const [p1, p2] = generateBezierAnchors(start, end, spread);
@@ -66,6 +66,10 @@ export function overshootPoint(target: Point, viewport: Viewport, radius = 120):
     x: target.x + distance * Math.cos(angle),
     y: target.y + distance * Math.sin(angle),
   }, viewport);
+}
+
+export function overshootRadiusForBox(box: TargetBox): number {
+  return Math.hypot(box.width, box.height) * randomFloat(0.1, 0.2);
 }
 
 export function clampPoint(point: Point, viewport: Viewport): Point {

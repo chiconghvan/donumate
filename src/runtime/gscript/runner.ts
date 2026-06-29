@@ -199,7 +199,7 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
       clearScreen();
       const signalResult = await executeGscriptBlock(baseCtx, program.mainLogic);
       if (signalResult && signalResult !== 'stop') throw new Error(`${signalResult} used outside a loop.`);
-      logger.info('Done. Profile cleaned up.');
+      logger.info('Done.');
     } else if (beforeSignal !== 'stop') {
       logger.info('  Main logic empty, skip profile launch.');
     }
@@ -216,7 +216,9 @@ export async function runGscriptWorkflow(options: GscriptRunnerOptions): Promise
           apiBaseUrl: options.apiBaseUrl,
           apiToken: options.apiToken,
         });
-        await cleanupManager.closeProfile(profile.id).catch((error: unknown) => logger.error(formatError(error)));
+        await cleanupManager.closeProfile(profile.id)
+          .then(() => logger.info('Profile cleaned up.'))
+          .catch((error: unknown) => logger.error(formatError(error)));
       }
 
       try {

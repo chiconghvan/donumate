@@ -5,7 +5,7 @@ import type { BidiKeyAction, BidiPointerAction, BidiPointerMoveAction, BrowsingC
 import { countInteractiveElementsExpression, type InteractiveElementsResult, type ButtonInfo } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
-import { clampPoint, generateHumanMousePath, overshootPoint, randomInt, randomPointInBox, randomStartPoint, type PathPoint, type Point, type TargetPoint } from './human-mouse.js';
+import { clampPoint, generateHumanMousePath, overshootPoint, overshootRadiusForBox, randomInt, randomPointInBox, randomStartPoint, type PathPoint, type Point, type TargetPoint } from './human-mouse.js';
 import { writeHostClipboardText } from './host-clipboard.js';
 import type { BrowserPageAutomation, HumanTypingOptions } from './page-automation-types.js';
 
@@ -28,8 +28,6 @@ const VIRTUAL_KEYBOARD_ID = 'donut-virtual-keyboard';
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const CONTROL_KEY = '';
 const CURSOR_SPEED_SCALE = 1.7;
-const CURSOR_MIN_STEPS = Math.round(25 / CURSOR_SPEED_SCALE);
-const CURSOR_MAX_STEPS = Math.round(80 / CURSOR_SPEED_SCALE);
 const KEY_CODES: Record<string, string> = {
   null: '\uE000',
   cancel: '\uE001',
@@ -463,11 +461,11 @@ export class PageAutomation implements BrowserPageAutomation {
 
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
     if (distance > 500) {
-      const overshot = overshootPoint(target, target.viewport, 120);
-      await this.moveMouseAlongPath(generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
-      await this.moveMouseAlongPath(generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
+      const overshot = overshootPoint(target, target.viewport, overshootRadiusForBox(target.box));
+      await this.moveMouseAlongPath(generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, viewport: target.viewport }));
     } else {
-      await this.moveMouseAlongPath(generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, viewport: target.viewport }));
     }
 
     this.mousePosition = { x: target.x, y: target.y };

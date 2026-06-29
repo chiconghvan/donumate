@@ -106,14 +106,14 @@ export class DonutApiClient {
     }
 
     if (!response.ok) {
-      throw new AppError(await this.httpErrorMessage(response));
+      throw new AppError(await this.httpErrorMessage(response, path));
     }
 
     const text = await response.text();
     return text ? JSON.parse(text) : null;
   }
 
-  private async httpErrorMessage(response: Response): Promise<string> {
+  private async httpErrorMessage(response: Response, path: string): Promise<string> {
     const details = await response.text().catch(() => '');
     const suffix = details ? ` Response: ${details}` : '';
     switch (response.status) {
@@ -124,7 +124,9 @@ export class DonutApiClient {
       case 404:
         return `Donut profile or endpoint not found (404).${suffix}`;
       case 500:
-        return `Donut launch failed (500).${suffix}`;
+        if (path.includes('/run')) return `Donut launch failed (500).${suffix}`;
+        if (path.includes('/kill')) return `Donut profile close failed (500).${suffix}`;
+        return `Donut API internal error (500).${suffix}`;
       default:
         return `Donut API error ${response.status} ${response.statusText}.${suffix}`;
     }
