@@ -96,14 +96,14 @@ async function buildExe() {
 }
 
 function packageExe() {
-  log('Packaging exe (release/donumate-win-x64.exe)');
+  log('Packaging exe (release/donumate.exe)');
 
   const releaseDir = resolve(ROOT, 'release');
   if (!existsSync(releaseDir)) mkdirSync(releaseDir, { recursive: true });
 
-  run('pnpm dlx @yao-pkg/pkg dist-exe/cli.js --targets node22-win-x64 --fallback-to-source --output release/donumate-win-x64.exe');
+  run('pnpm dlx @yao-pkg/pkg dist-exe/cli.js --targets node22-win-x64 --fallback-to-source --output release/donumate.exe');
 
-  const exePath = resolve(ROOT, 'release/donumate-win-x64.exe');
+  const exePath = resolve(ROOT, 'release/donumate.exe');
   if (existsSync(exePath)) {
     const size = statSync(exePath).size;
     const mb = (size / 1024 / 1024).toFixed(2);

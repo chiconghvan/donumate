@@ -75,13 +75,13 @@ pnpm build:exe
 Output:
 
 ```text
-release/donumate-win-x64.exe
+release/donumate.exe
 ```
 
 Run:
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
+.\release\donumate.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
 Exe mode uses readline prompts instead of Ink. It still uses the same `.gscript`, Bidi, Playwright, Donut, and GPMLogin runtime code as dev mode.
