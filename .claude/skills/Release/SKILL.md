@@ -80,6 +80,8 @@ Rules:
 - Group related changes into single bullet
 - Use conventional commit type: feat/fix/docs/chore/perf/refactor
 - If multiple types, use the most significant one
+- Build message as real multiline text, not a single escaped string with `\n`
+- Prefer writing message to temp file and using `git commit -F <file>`
 
 ### Step 4: Version Bump
 
@@ -100,7 +102,7 @@ node -e "const p=require('./package.json'); const v=p.version.split('.'); v['<in
 
 ```bash
 git add -A
-git commit -m '<generated message>'
+git commit -F <commit-message-file>
 ```
 
 ### Step 6: Create Annotated Tag
@@ -128,7 +130,7 @@ git push origin <current-branch> --tags
 ```bash
 gh release create v<new-version> \
   --title "v<new-version>" \
-  --notes "<release notes>" \
+  --notes-file <release-notes-file> \
   release/donumate-win-x64.exe
 ```
 
@@ -148,6 +150,11 @@ Release notes format:
 ### Files Changed
 - path/to/file.ts — description
 ```
+
+Rules:
+- Write release notes to temp file, then pass file path via `--notes-file`
+- Do not pass notes as inline shell string with `\n`
+- Keep blank lines as actual blank lines in file
 
 ### Step 10: Report
 

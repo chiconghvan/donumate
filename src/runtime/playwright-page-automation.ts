@@ -25,6 +25,9 @@ const getPageInfoExpression = `JSON.stringify({ title: document.title, url: loca
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
+const CURSOR_SPEED_SCALE = 1.7;
+const CURSOR_MIN_STEPS = Math.round(25 / CURSOR_SPEED_SCALE);
+const CURSOR_MAX_STEPS = Math.round(80 / CURSOR_SPEED_SCALE);
 
 const KEY_NAMES: Record<string, string> = {
   backspace: 'Backspace',
@@ -375,16 +378,17 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
     const overshot = distance > 500 ? overshootPoint(target, target.viewport, 120) : undefined;
     const paths = overshot
       ? [
-        generateHumanMousePath(start, overshot, { targetWidth: target.box.width, viewport: target.viewport }),
-        generateHumanMousePath(overshot, target, { targetWidth: target.box.width, spreadOverride: 10, viewport: target.viewport }),
+        generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }),
+        generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }),
       ]
-      : [generateHumanMousePath(start, target, { targetWidth: target.box.width, viewport: target.viewport })];
+      : [generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport })];
 
     for (const path of paths) {
       for (const point of path) {
-        await this.showVirtualCursor(point, point.duration);
+        const duration = Math.max(0, Math.round(point.duration));
+        await this.showVirtualCursor(point, duration);
         await page.mouse.move(Math.round(point.x), Math.round(point.y), { steps: 1 });
-        await sleep(point.duration);
+        if (duration > 0) await sleep(duration);
       }
     }
 

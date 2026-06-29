@@ -1,7 +1,7 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
 import type { BidiClient } from '../bidi/bidi-client.js';
-import type { BidiKeyAction, BidiPointerAction, BrowsingContextInfo } from '../bidi/bidi-types.js';
+import type { BidiKeyAction, BidiPointerAction, BidiPointerMoveAction, BrowsingContextInfo } from '../bidi/bidi-types.js';
 import { countInteractiveElementsExpression, type InteractiveElementsResult, type ButtonInfo } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
 import { runWithClipboardLock } from './clipboard-lock.js';
@@ -27,6 +27,9 @@ const VIRTUAL_MOUSE_ID = 'donut-virtual-mouse';
 const VIRTUAL_KEYBOARD_ID = 'donut-virtual-keyboard';
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const CONTROL_KEY = '';
+const CURSOR_SPEED_SCALE = 1.7;
+const CURSOR_MIN_STEPS = Math.round(25 / CURSOR_SPEED_SCALE);
+const CURSOR_MAX_STEPS = Math.round(80 / CURSOR_SPEED_SCALE);
 const KEY_CODES: Record<string, string> = {
   null: '\uE000',
   cancel: '\uE001',
@@ -461,10 +464,10 @@ export class PageAutomation implements BrowserPageAutomation {
     const distance = Math.hypot(target.x - start.x, target.y - start.y);
     if (distance > 500) {
       const overshot = overshootPoint(target, target.viewport, 120);
-      await this.moveMouseAlongPath(generateHumanMousePath(start, overshot, { targetWidth: target.box.width, viewport: target.viewport }));
-      await this.moveMouseAlongPath(generateHumanMousePath(overshot, target, { targetWidth: target.box.width, spreadOverride: 10, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(start, overshot, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(overshot, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, spreadOverride: 10, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
     } else {
-      await this.moveMouseAlongPath(generateHumanMousePath(start, target, { targetWidth: target.box.width, viewport: target.viewport }));
+      await this.moveMouseAlongPath(generateHumanMousePath(start, target, { moveSpeed: CURSOR_SPEED_SCALE, targetWidth: target.box.width, minSteps: CURSOR_MIN_STEPS, maxSteps: CURSOR_MAX_STEPS, viewport: target.viewport }));
     }
 
     this.mousePosition = { x: target.x, y: target.y };
@@ -474,13 +477,14 @@ export class PageAutomation implements BrowserPageAutomation {
   private async moveMouseAlongPath(path: PathPoint[]): Promise<void> {
     if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
     for (const point of path) {
-      await this.showVirtualCursor(point, point.duration);
+      const duration = Math.max(0, Math.round(point.duration));
+      await this.showVirtualCursor(point, duration);
       await this.bidi.performActions(this.contextId, [
         {
           type: 'pointer',
           id: VIRTUAL_MOUSE_ID,
           parameters: { pointerType: 'mouse' },
-          actions: [this.toPointerMove(point)],
+          actions: [{ ...this.toPointerMove(point), duration } as BidiPointerMoveAction],
         },
       ]);
     }
@@ -544,7 +548,7 @@ export class PageAutomation implements BrowserPageAutomation {
       type: 'pointerMove',
       x: Math.round(point.x),
       y: Math.round(point.y),
-      duration: point.duration,
+      duration: Math.max(0, Math.round(point.duration)),
       origin: 'viewport',
     };
   }

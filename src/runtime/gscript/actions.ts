@@ -17,7 +17,6 @@ export async function executeGscriptAction(ctx: GscriptExecutionContext, node: G
     await runActionDelay(ctx, node.delay);
     return result;
   } catch (error) {
-    if (error instanceof AppError) throw error;
     throw new AppError(`GPM action failed: ${actionLabel(node)}.`, error);
   }
 }

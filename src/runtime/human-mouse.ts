@@ -103,7 +103,7 @@ function addTiming(points: Point[], moveSpeed?: number): PathPoint[] {
     const t = i / Math.max(1, points.length - 1);
     const localSpeed = Math.max(1, bezierSpeed(p0, p1, p2, p3, t));
     const stepDistance = magnitude(direction(prev, point));
-    const duration = clamp(Math.round((stepDistance / localSpeed) * 16 / speed), 1, 40);
+    const duration = clamp(Math.round((stepDistance / localSpeed) * 10 / speed), 1, 30);
     timed.push({ ...point, duration });
   }
 
