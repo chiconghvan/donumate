@@ -11,6 +11,7 @@ import type { BrowserProfileManager } from '../browser-manager/index.js';
 
 const PROFILE_LAUNCH_MAX_ATTEMPTS = 3;
 const PROFILE_LAUNCH_RETRY_DELAY_MS = 10000;
+const PROFILE_CONNECT_DELAY_MS = 6000;
 
 export function clearScreen(): void {
   process.stdout.write('\x1b[2J\x1b[H');
@@ -56,6 +57,9 @@ export async function launchProfileWithRetry(options: LaunchProfileOptions): Pro
       if (launch.readyMessage) {
         logger.info(launch.readyMessage);
       }
+
+      logger.info(`  Waiting ${PROFILE_CONNECT_DELAY_MS}ms for profile startup before connecting...`);
+      await sleep(PROFILE_CONNECT_DELAY_MS, options.signal);
 
       if (launch.runtime === 'playwright' || isWeyfernBrowser(options.browser)) {
         playwrightBrowser = await connectPlaywrightWithRetry(run.remote_debugging_port, options.bidiConnectTimeoutMs, options.signal);

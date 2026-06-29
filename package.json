@@ -1,6 +1,6 @@
 {
   "name": "donumate",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Standalone CLI for launching Donut browser profiles and automating GPM .gscript workflows over WebDriver BiDi.",
   "type": "module",
   "bin": {
@@ -21,7 +21,7 @@
       "dist/cli.js"
     ],
     "assets": [
-      "node_modules/.pnpm/yoga-layout@3.2.1/node_modules/yoga-layout/dist/binaries/yoga-wasm-base64-esm.js"
+      "node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/browsers.json"
     ],
     "targets": [
       "node22-win-x64"

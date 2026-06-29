@@ -1,143 +1,35 @@
 # Changelog
 
-## 0.4.1
+## 0.5.0 - 2026-06-29
 
-### Bug fixes
+### Major Changes
+- Gscript-only scope locked in across repo docs and CLI guidance.
+- Legacy `.flow`, script builder, auto-update, script-store, and profile-name lookup removed.
+- Dev UI and exe UI split kept: Ink for dev, readline for packaged exe.
+- Browser session flow kept on shared runtime with retry, BiDi, and Playwright/CDP support.
 
-- Fixed `pnpm build:exe` by removing the stale script-builder asset copy step after the script-builder refactor.
+### Improvements
+- CLI `run` flow kept aligned with `.gscript` execution and profile input handling.
+- Playwright CDP path and profile launch cleanup hardened.
+- README and CLI docs refreshed for current runtime model and executable usage.
+- Release workflow and repo guidance updated for current packaging and publishing path.
 
-### Changes
+### Removed
+- Old `.flow` runtime, parser, checker, commands, examples, and docs.
+- Update checker and self-update code.
+- Script store and release artifacts tied to removed flow/update surface.
+- Legacy docs, tests, and helper files that only served removed features.
 
-- Added `deploy.bat` to `.gitignore` for local release automation.
-- Replaced the old Donut Browser API guide with the GPMLogin API document.
+### Files Changed
+- Core runtime: `src/cli.ts`, `src/runtime/profile-session.ts`, `src/runtime/playwright-page-automation.ts`.
+- UI layer: `src/ui/ui-provider.ts`, `src/ui/ui-readline.ts`, `src/ui/ui-ink.ts`, `src/ui/ui-types.ts`.
+- Package and release metadata: `package.json`, `.github/workflows/release.yml`.
+- Repo docs: `README.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `CLAUDE.md`, `cli-guide.md`.
+- Large doc cleanup: `docs/GPM-Automate-Docs/**`, `docs/gscript-runtime.md`, `api-guide.md`, `gpmlogin_api_document.md`.
+- Removed update code: `src/update/**`, `src/ui/update-prompt.tsx`.
+- Removed old tests and examples: `test/**`, `__test_for_loop*.mjs`, `__test_trace.mjs`.
+- Skill and reference cleanup: `.claude/skills/convert-gpm-to-flow-scripts/**`.
 
-## 0.4.0
-
-### New features
-
-- Added `--manager gpm` to launch and clean up profiles through GPMLogin instead of Donut Browser.
-- Added `--win-size <width,height>` and wired `--headless` through GPMLogin `addination_args`.
-- GPMLogin profiles now attach through Playwright CDP while keeping the existing gscript runtime unchanged.
-
-### Changes
-
-- CLI profile selection and launch flow now route through a browser-manager adapter so Donut and GPMLogin share the same runtime.
-- GPMLogin profile lookup now falls back between `/api/v3/profiles/{id}` and `/api/v3/profile/{id}`.
-
-## 0.1.3
-
-### Changes
-
-- `PageAutomation` now adds human-like pauses around XPath clicks and moves, and it scrolls targets into view before interacting with them when they are outside the viewport.
-
-## 0.1.2
-
-### New features
-
-- **Script builder web app** - added a browser-based flow script editor with import/export support and runtime validation.
-- **Flow runtime expansion** - parser, executor, and command catalog were expanded for richer `.flow` scripting and control flow.
-- **Gscript workflow support** - added the alternate GScript execution path and headless flow script creation flow.
-
-### Changes
-
-- CLI script discovery now covers the updated `.ts`, `.flow.json`, and `.flow` workflow formats.
-- Release packaging now includes the script builder web assets and the Windows x64 release layout.
-- Docs and release metadata were refreshed to match the new scripting and builder workflow.
-
-## 0.0.8
-
-### New features
-
-- **Excel profile mapping** — tick `mapProfileName` in Script Settings to auto-map Excel rows by profile name in column A. Use `inputExcelFile[B]`, `inputExcelFile[C]`, etc. to read data from the matched row. Script stops with error if profile name not found in column A.
-
-## 0.0.7
-
-### New features
-
-- **Windows exe auto-update** — CLI checks GitHub Releases at startup, prompts via Ink, downloads newer Windows x64 exe, and hands off replacement to a detached updater script.
-- **`--no-update-check`** — skips GitHub update checks for any CLI command.
-- **Native release workflow** — GitHub Actions builds Windows, Linux, and macOS binaries with `@yao-pkg/pkg` and publishes tag releases with artifacts.
-
-### Changes
-
-- CLI version now reads from `package.json` instead of a hardcoded value.
-- Profile launch now retries failed launch/connect attempts and cleans up partial launches before retrying.
-- Donut profile readiness now requires both `is_running === true` and a positive `process_id`.
-
-## 0.0.6
-
-### New features
-
-- **`.flow` expanded command set** — added `navUrl`, tab controls, history/reload/URL helpers, XPath read/count helpers, mouse move, scroll, JS execution, file upload, HTTP request, HTTP download, and `fileReadAllText` commands.
-- **Raw `.flow` strings** — no JSON-style escaping needed in script source; runtime handles escaping/serialization.
-- **Docs cleanup** — removed doubled backslashes from `.flow` examples; paths now shown in raw form.
-- **Loop controls** — added `nextLoop` and `exitLoop` for `while`/`for` bodies.
-- **Assignment shorthand** — added `set ${name}=expr` while keeping `set name = expr` and `name = expr` compatible.
-- **Result variables** — commands now expose values like `${pageUrl}`, `${elementText}`, `${elementAttribute}`, `${elementCount}`, `${jsResult}`, `${httpStatus}`, `${httpBody}`, `${downloadPath}`, and `${downloadBytes}`.
-- **BiDi tab support** — added browsing context create/close/activate wrappers.
-- **File upload helper** — loads local files into `input[type=file]` targets and dispatches `input`/`change` events.
-
-### Changes
-
-- `PageAutomation` now exposes higher-level navigation, element, scrolling, JS, tab, and upload helpers for `.flow` and TypeScript scripts.
-- `.flow` docs and README now include expanded command examples and command result variables.
-
-## 0.0.3
-
-### New features
-
-- **Human-like typing** — `typeTextXPath()` uses BiDi key actions with random delays per grapheme, pause after spaces/punctuation
-- **Human-like mouse movement** — cursor follows Bezier curve with jitter, overshoot on long moves, settle-back on close moves
-- **Virtual mouse cursor** — visible red dot injected into page for debugging mouse path
-- **`clickXPath()` rewrite** — resolves target coordinates via `getBoundingClientRect`, moves mouse to element center with jitter, then clicks
-- **`PasteText` global clipboard lock** — `pasteTextXPath()` now uses process-wide mutex to serialize clipboard + Ctrl+V critical section, safe for future multi-profile concurrent runs
-- **Host clipboard writer** — `writeHostClipboardText()` sets Windows clipboard via PowerShell file-based approach, avoids page-context clipboard API race
-- **`.flow pastetext` command** — `pastetext "//xpath" "text"` in `run profile` block
-
-### Changes
-
-- `PageAutomation.clickXPath()` — rewritten to use coordinate-based BiDi pointer actions instead of `node.click()`
-- `PageAutomation.typeXPath()` — now delegates to `typeTextXPath()` with BiDi key actions
-- `PageAutomation.pasteTextXPath()` — clipboard write moved to host process, wrapped in global lock
-- `BidiClient` — added `performActions()` and `releaseActions()` public methods
-- Removed `PageAutomation.writeClipboardText()` — no longer using in-page clipboard API
-
-## 0.0.2
-
-### New features
-
-- **`.flow` DSL control flow** — `if` / `else if` / `else` / `while` / `for` with indentation-based block syntax
-- **Expression evaluator** — arithmetic (`+ - * / %`), comparison (`== != < <= > >=`), logic (`&& || !`), parentheses, function calls
-- **`hasElement(xpath)`** — check XPath existence in `.flow` conditions (uses BiDi `document.evaluate`)
-- **`loopIndex` variable** — zero-based index of nearest enclosing `for`/`while` loop, auto-restored on nested loop exit
-- **`set` / assignment statements** — `set x = expr` or `x = expr` for mutable variables
-- **XPath page helpers** — `existsXPath()`, `waitForXPath()`, `clickXPath()`, `typeXPath()`, `textXPath()` on `PageAutomation`
-- **`.flow` input UI** — renders `inputs {}` block as interactive CLI form (Tab/arrow/Enter)
-- **CLI `--input` option** — override `.flow` inputs from command line (`--input key=value`, repeatable)
-- **Lifecycle blocks** — `before run profile {}`, `run profile {}`, `after kill profile {}` with validation
-- **`.flow` script loader** — detect `.flow` extension, parse to AST, execute via interpreter
-- **Script selector** — interactive prompt now lists `.ts` and `.flow` files
-- **Loop guard** — 10,000 iteration cap on `while`/`for` to prevent infinite loops
-
-### Changes
-
-- Runner refactored to 6-step flow: load script → collect inputs → load profile → launch → run → cleanup
-- `BidiClient.evaluate()` now defaults `awaitPromise: true`
-- `WorkflowContext` gains `inputs` field (typed `FlowInputValue` map)
-- `WorkflowContext.args` remains as string map for backward compatibility
-- `CLAUDE.md` and `README.md` updated with `.flow` documentation
-
-### Bug fixes
-
-- BiDi connect retry on initial connection failure
-
-## 0.0.1
-
-- Initial release
-- Donut REST API client (list/get/run/kill profiles)
-- Camoufox profile selector (interactive)
-- WebDriver BiDi client (connect, navigate, evaluate)
-- `PageAutomation` class (goto, waitForLoad, evaluate, info, interactive element counting)
-- TypeScript workflow scripts with `WorkflowContext`
-- Built-in `threads` workflow
-- `.env` + CLI flag config merging via zod
+### Notes
+- This release reflects current workspace state, including tracked deletions and doc cleanup.
+- Version bumped from `0.4.1` to `0.5.0`.

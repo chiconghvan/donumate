@@ -55,24 +55,9 @@ async function readlineTextInput(args: { title: string; defaultValue?: string; v
   }
 }
 
-async function readlineUpdatePrompt(update: { currentVersion: string; latestVersion: string; assetName: string; size: number; releaseUrl: string; downloadUrl: string }): Promise<'install' | 'skip' | undefined> {
-  const rl = createReadlineInterface();
-  try {
-    console.log(`\nUpdate available: ${update.currentVersion} → ${update.latestVersion}`);
-    console.log(`Asset: ${update.assetName}`);
-    console.log(`Release: ${update.releaseUrl}\n`);
-    const answer = await readlineQuestion(rl, 'Install update now? (y/n): ');
-    if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') return 'install';
-    return 'skip';
-  } finally {
-    rl.close();
-  }
-}
-
 const readlineUi: UiProvider = {
   runListPicker: readlineListPicker,
   runTextInputPrompt: readlineTextInput,
-  runUpdatePrompt: readlineUpdatePrompt,
 };
 
 let _ui: UiProvider | undefined;

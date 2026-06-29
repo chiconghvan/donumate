@@ -1,4 +1,4 @@
-import type { UiProvider, ListPickerArgs, TextInputArgs, UpdateInfo, UpdateChoice } from './ui-types.js';
+import type { UiProvider, ListPickerArgs, TextInputArgs } from './ui-types.js';
 import * as readline from 'readline';
 
 function createReadlineInterface(): readline.Interface {
@@ -71,27 +71,7 @@ async function readlineTextInput(args: TextInputArgs): Promise<string | undefine
   }
 }
 
-async function readlineUpdatePrompt(update: UpdateInfo): Promise<UpdateChoice | undefined> {
-  const rl = createReadlineInterface();
-
-  try {
-    console.log(`\nUpdate available: ${update.currentVersion} → ${update.latestVersion}`);
-    console.log(`Asset: ${update.assetName}`);
-    console.log(`Release: ${update.releaseUrl}\n`);
-
-    const answer = await readlineQuestion(rl, 'Install update now? (y/n): ');
-
-    if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
-      return 'install';
-    }
-    return 'skip';
-  } finally {
-    rl.close();
-  }
-}
-
 export const readlineUi: UiProvider = {
   runListPicker: readlineListPicker,
   runTextInputPrompt: readlineTextInput,
-  runUpdatePrompt: readlineUpdatePrompt,
 };

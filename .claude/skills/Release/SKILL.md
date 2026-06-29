@@ -20,6 +20,7 @@ Execute these steps IN ORDER. Stop and report if any step fails.
 ```bash
 # Must be on a branch with upstream
 git rev-parse --abbrev-ref HEAD
+git rev-parse --abbrev-ref --symbolic-full-name '@{u}'
 
 # Check for uncommitted changes
 git status --short
@@ -108,18 +109,27 @@ git commit -m '<generated message>'
 git tag -a v<new-version> -m 'v<new-version> - <one-line summary>'
 ```
 
-### Step 7: Push
+### Step 7: Build Release Asset
+
+```bash
+pnpm build:exe
+```
+
+Verify `release/donumate-win-x64.exe` exists before creating the GitHub release.
+
+### Step 8: Push
 
 ```bash
 git push origin <current-branch> --tags
 ```
 
-### Step 8: Create GitHub Release
+### Step 9: Create GitHub Release
 
 ```bash
 gh release create v<new-version> \
   --title "v<new-version>" \
-  --notes "<release notes>"
+  --notes "<release notes>" \
+  release/donumate-win-x64.exe
 ```
 
 Release notes format:
@@ -139,7 +149,7 @@ Release notes format:
 - path/to/file.ts — description
 ```
 
-### Step 9: Report
+### Step 10: Report
 
 Output summary:
 ```

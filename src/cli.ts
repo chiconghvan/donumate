@@ -6,15 +6,15 @@ import { selectGscript } from './runtime/gscript/script-selector.js';
 import { getUi } from './ui/ui-provider.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
-import { CURRENT_VERSION, maybeRunUpdateCheck } from './update/index.js';
 import type { BrowserManagerKind } from './browser-manager/index.js';
+import packageJson from '../package.json' with { type: 'json' };
 
 const program = new Command();
 
 program
   .name('donumate')
   .description('Launch Donut browser profiles and automate them with GPM Automate .gscript files over WebDriver BiDi')
-  .version(CURRENT_VERSION);
+  .version(packageJson.version);
 
 type CliOptions = {
   api?: string;
@@ -27,7 +27,6 @@ type CliOptions = {
   commandTimeout?: string;
   script?: string;
   input?: string[];
-  updateCheck?: boolean;
   minimalLog?: boolean;
 };
 
@@ -54,10 +53,11 @@ function parseManager(value: string): BrowserManagerKind {
 
 function validateWinSize(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  if (!/^\d+,\d+$/.test(value)) {
+  const match = value.trim().match(/^(\d+)[,\s]+(\d+)$/);
+  if (!match) {
     throw new Error(`Invalid --win-size value "${value}". Expected width,height (e.g. 800,1000).`);
   }
-  return value;
+  return `${match[1]},${match[2]}`;
 }
 
 async function selectRootAction(): Promise<RootAction | undefined> {
@@ -84,8 +84,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
     .option('--script <path>', 'GPM Automate .gscript path')
     .option('--input <key=value>', 'Set script input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
-    .option('--minimal-log', 'Show minimal runtime logs')
-    .option('--no-update-check', 'Skip checking GitHub releases for updates');
+    .option('--minimal-log', 'Show minimal runtime logs');
 }
 
 initAbortHandler();
@@ -100,8 +99,6 @@ async function runWithOptions(options: CliOptions): Promise<void> {
     connectTimeout: options.connectTimeout,
     commandTimeout: options.commandTimeout,
   });
-
-  await maybeRunUpdateCheck({ currentVersion: CURRENT_VERSION, updateCheck: options.updateCheck });
 
   const fixedScript = options.script;
   let lastSelectedScript: string | undefined = undefined;
