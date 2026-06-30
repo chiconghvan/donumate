@@ -1,0 +1,8 @@
+{
+  "assets": [
+    "node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/browsers.json",
+    "node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/package.json",
+    "node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/lib/**/*.js",
+    "node_modules/.pnpm/playwright-core@1.61.1/node_modules/playwright-core/lib/**/*.json"
+  ]
+}

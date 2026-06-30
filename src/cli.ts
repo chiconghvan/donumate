@@ -7,14 +7,14 @@ import { getUi } from './ui/ui-provider.js';
 import { AppError, CliBackError, formatError, isCliBackError } from './utils/errors.js';
 import { globalAbort, initAbortHandler } from './utils/abort.js';
 import type { BrowserManagerKind } from './browser-manager/index.js';
-import packageJson from '../package.json' with { type: 'json' };
 
 const program = new Command();
+const cliVersion = process.env.npm_package_version ?? '0.5.5';
 
 program
   .name('donumate')
   .description('Launch Donut browser profiles and automate them with GPM Automate .gscript files over WebDriver BiDi')
-  .version(packageJson.version);
+  .version(cliVersion);
 
 type CliOptions = {
   api?: string;

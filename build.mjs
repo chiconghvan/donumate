@@ -14,7 +14,7 @@
 
 import { build } from 'esbuild';
 import { execSync } from 'child_process';
-import { rmSync, existsSync, mkdirSync, statSync } from 'fs';
+import { rmSync, existsSync, mkdirSync, statSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -89,21 +89,24 @@ async function buildExe() {
     platform: 'node',
     bundle: true,
     splitting: false,
-    external: ['playwright-core', 'xlsx'],
+    external: ['playwright-core', 'xlsx', 'chromium-bidi', 'chromium-bidi/*'],
     plugins: [inkStubPlugin],
   });
   console.log('  Output: dist-exe/cli.js');
 }
 
 function packageExe() {
-  log('Packaging exe (release/donumate.exe)');
+  const packageJson = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
+  const exeName = `donumate_v${packageJson.version}.exe`;
+  const exePath = resolve(ROOT, 'release', exeName);
+
+  log(`Packaging exe (release/${exeName})`);
 
   const releaseDir = resolve(ROOT, 'release');
   if (!existsSync(releaseDir)) mkdirSync(releaseDir, { recursive: true });
 
-  run('pnpm dlx @yao-pkg/pkg dist-exe/cli.js --targets node22-win-x64 --fallback-to-source --output release/donumate.exe');
+  run(`pnpm dlx @yao-pkg/pkg dist-exe/cli.js --config pkg.json --targets node22-win-x64 --fallback-to-source --output release/${exeName}`);
 
-  const exePath = resolve(ROOT, 'release/donumate.exe');
   if (existsSync(exePath)) {
     const size = statSync(exePath).size;
     const mb = (size / 1024 / 1024).toFixed(2);

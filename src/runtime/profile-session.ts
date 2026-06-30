@@ -118,8 +118,9 @@ async function connectPlaywrightWithRetry(remoteDebuggingPort: number, timeoutMs
     } catch (error) {
       lastError = error as Error;
       if (signal?.aborted) break;
+      logger.error(`  Playwright CDP attempt ${attempt}/${maxRetries} failed: ${formatError(error)}`);
       if (attempt < maxRetries) {
-        logger.info(`  Playwright CDP attempt ${attempt}/${maxRetries} failed, retrying in 10s...`);
+        logger.info('  Retrying in 10s...');
         await sleep(10000, signal);
       }
     }

@@ -1,5 +1,6 @@
 import { stat } from 'fs/promises';
 import { resolve } from 'path';
+import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { countInteractiveElementsExpression, type ButtonInfo, type InteractiveElementsResult } from '../automation/interactive-elements.js';
 import { sleep } from '../utils/retry.js';
@@ -69,8 +70,7 @@ const KEY_NAMES: Record<string, string> = {
   command: 'Meta',
 };
 
-export async function connectPlaywrightToCdp(remoteDebuggingPort: number, timeoutMs: number): Promise<Browser> {
-  const { chromium } = await import('playwright-core');
+export function connectPlaywrightToCdp(remoteDebuggingPort: number, timeoutMs: number): Promise<Browser> {
   return chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`, { timeout: timeoutMs });
 }
 

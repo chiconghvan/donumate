@@ -310,13 +310,13 @@ Smoke tests:
 
 ```bash
 pnpm start -- --help
-.\release\donumate-win-x64.exe --help
+.\release\donumate_v<version>.exe --help
 ```
 
 If local API/profile is available:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id> --minimal-log
+.\release\donumate_v<version>.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id> --minimal-log
 ```
 
 ## Coding Style

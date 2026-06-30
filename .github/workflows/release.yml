@@ -38,16 +38,22 @@ jobs:
       - name: Build Windows exe
         run: pnpm build:exe
 
+      - name: Set release asset name
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          "DONUMATE_EXE=donumate_v$version.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: donumate.exe
-          path: release/donumate.exe
+          name: ${{ env.DONUMATE_EXE }}
+          path: release/${{ env.DONUMATE_EXE }}
           if-no-files-found: error
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/donumate.exe
+          files: release/${{ env.DONUMATE_EXE }}
           generate_release_notes: true

@@ -3,7 +3,7 @@
 This guide covers the packaged Windows executable:
 
 ```text
-release/donumate-win-x64.exe
+release/donumate_v<version>.exe
 ```
 
 The exe is built without Ink TUI. It uses readline/plain terminal prompts when an argument is missing. It runs the same `.gscript`, Bidi, Playwright, GPMLogin, and Donut Browser runtime as dev mode.
@@ -25,25 +25,25 @@ pnpm build:exe
 Output:
 
 ```text
-release/donumate-win-x64.exe
+release/donumate_v<version>.exe
 ```
 
 Check help:
 
 ```bash
-.\release\donumate-win-x64.exe --help
+.\release\donumate_v<version>.exe --help
 ```
 
 ## Basic Command
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
 Equivalent root command:
 
 ```bash
-.\release\donumate-win-x64.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
+.\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
 Use `run` for clarity in scripts and docs.
@@ -51,7 +51,7 @@ Use `run` for clarity in scripts and docs.
 ## Full Syntax
 
 ```bash
-donumate-win-x64.exe run --script <file.gscript> --manager <donut|gpm> --api <url> --token <token> --profile <profile-id> --headless --win-size <width,height> --connect-timeout <ms> --command-timeout <ms> --input key=value --minimal-log
+donumate_v<version>.exe run --script <file.gscript> --manager <donut|gpm> --api <url> --token <token> --profile <profile-id> --headless --win-size <width,height> --connect-timeout <ms> --command-timeout <ms> --input key=value --minimal-log
 ```
 
 All options except `--input` appear at most once. `--input` can repeat.
@@ -138,7 +138,7 @@ Launches the profile headless when manager supports it.
 Example:
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --headless
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --headless
 ```
 
 ### `--win-size <width,height>`
@@ -213,7 +213,7 @@ Input values are parsed by the script input type:
 Example:
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input maxPosts=5
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input maxPosts=5
 ```
 
 ### `--minimal-log`
@@ -223,7 +223,7 @@ Shows compact runtime logs.
 Example:
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --minimal-log
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --minimal-log
 ```
 
 Use this for automation logs where each action should be short.
@@ -266,25 +266,25 @@ Use them inside script actions through normal variable interpolation supported b
 Run with default GPMLogin API:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with explicit API URL:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run headless with window size:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --win-size 800,1000
+.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --win-size 800,1000
 ```
 
 Run with inputs:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input keyword=donumate --input limit=10
+.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input keyword=donumate --input limit=10
 ```
 
 ## Donut Browser Examples
@@ -292,13 +292,13 @@ Run with inputs:
 Run with default Donut API:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager donut --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe run --manager donut --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with token:
 
 ```bash
-.\release\donumate-win-x64.exe run --manager donut --api http://127.0.0.1:10108 --token <token> --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe run --manager donut --api http://127.0.0.1:10108 --token <token> --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 ## Script Lifecycle
@@ -372,5 +372,5 @@ Pass all required script inputs with `--input` so command can run unattended.
 Example:
 
 ```bash
-.\release\donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input password=secret --minimal-log
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input password=secret --minimal-log
 ```

@@ -117,7 +117,7 @@ git tag -a v<new-version> -m 'v<new-version> - <one-line summary>'
 pnpm build:exe
 ```
 
-Verify `release/donumate-win-x64.exe` exists before creating the GitHub release.
+Verify `release/donumate_v<version>.exe` exists before creating the GitHub release.
 
 ### Step 8: Push
 
@@ -131,7 +131,7 @@ git push origin <current-branch> --tags
 gh release create v<new-version> \
   --title "v<new-version>" \
   --notes-file <release-notes-file> \
-  release/donumate-win-x64.exe
+  release/donumate_v<version>.exe
 ```
 
 Release notes format:

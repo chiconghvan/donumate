@@ -75,13 +75,13 @@ pnpm build:exe
 Output:
 
 ```text
-release/donumate.exe
+release/donumate_v<version>.exe
 ```
 
 Run:
 
 ```bash
-.\release\donumate.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
+.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
 Exe mode uses readline prompts instead of Ink. It still uses the same `.gscript`, Bidi, Playwright, Donut, and GPMLogin runtime code as dev mode.
@@ -107,25 +107,25 @@ Exe mode uses readline prompts instead of Ink. It still uses the same `.gscript`
 Run with GPMLogin:
 
 ```bash
-donumate-win-x64.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+donumate_v<version>.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with Donut Browser:
 
 ```bash
-donumate-win-x64.exe run --manager donut --api http://127.0.0.1:10108 --script .\scripts\auto-post-v4.gscript --profile <profile-id> --token <token>
+donumate_v<version>.exe run --manager donut --api http://127.0.0.1:10108 --script .\scripts\auto-post-v4.gscript --profile <profile-id> --token <token>
 ```
 
 Pass script inputs:
 
 ```bash
-donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input username=alice --input count=3
+donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input username=alice --input count=3
 ```
 
 Run headless with minimal logs:
 
 ```bash
-donumate-win-x64.exe run --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --minimal-log
+donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --minimal-log
 ```
 
 ## Runtime Variables
@@ -153,7 +153,7 @@ Build outputs:
 
 - `dist/`: dev bundle with Ink.
 - `dist-exe/`: exe bundle without Ink.
-- `release/donumate-win-x64.exe`: packaged Windows executable.
+- `release/donumate_v<version>.exe`: packaged Windows executable.
 
 ## Code Layout
 
