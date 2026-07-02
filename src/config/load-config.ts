@@ -17,8 +17,11 @@ const numberSchema = z.union([z.number(), z.string()]).transform((value) => {
   return parsed;
 });
 
+const DEFAULT_CONNECT_TIMEOUT_MS = 30000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 180000;
+
 const configSchema = z.object({
-  manager: z.enum(['donut', 'gpm']),
+  manager: z.enum(['donut', 'gpm', 'gpmglobal']),
   apiBaseUrl: z.string().url(),
   apiToken: z.string().optional(),
   profileId: z.string().optional(),
@@ -33,8 +36,8 @@ export type ConfigOverrides = Partial<Record<'api' | 'token' | 'profile' | 'head
 
 export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
   const manager = overrides.manager ?? 'donut';
-  const defaultApiBaseUrl = manager === 'gpm' ? 'http://127.0.0.1:19995' : 'http://127.0.0.1:10108';
-  const envApiBaseUrl = manager === 'gpm' ? process.env.GPM_API_BASE_URL : process.env.DONUT_API_BASE_URL;
+  const defaultApiBaseUrl = defaultApiBaseUrlForManager(manager);
+  const envApiBaseUrl = envApiBaseUrlForManager(manager);
   let parsed;
   try {
     parsed = configSchema.parse({
@@ -43,8 +46,8 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       apiToken: (overrides.token ?? process.env.DONUT_API_TOKEN) || undefined,
       profileId: (overrides.profile ?? process.env.DONUT_PROFILE_ID) || undefined,
       headless: overrides.headless ?? process.env.DONUT_HEADLESS ?? process.env.CAMOUFOX_HEADLESS ?? false,
-      bidiConnectTimeoutMs: overrides.connectTimeout ?? process.env.BIDI_CONNECT_TIMEOUT_MS ?? 30000,
-      bidiCommandTimeoutMs: overrides.commandTimeout ?? process.env.BIDI_COMMAND_TIMEOUT_MS ?? 15000,
+      bidiConnectTimeoutMs: overrides.connectTimeout ?? process.env.BIDI_CONNECT_TIMEOUT_MS ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      bidiCommandTimeoutMs: overrides.commandTimeout ?? process.env.BIDI_COMMAND_TIMEOUT_MS ?? DEFAULT_COMMAND_TIMEOUT_MS,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -58,4 +61,26 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     ...parsed,
     apiBaseUrl: parsed.apiBaseUrl.replace(/\/$/, ''),
   };
+}
+
+function defaultApiBaseUrlForManager(manager: BrowserManagerKind): string {
+  switch (manager) {
+    case 'gpm':
+      return 'http://127.0.0.1:19995';
+    case 'gpmglobal':
+      return 'http://127.0.0.1:9495';
+    case 'donut':
+      return 'http://127.0.0.1:10108';
+  }
+}
+
+function envApiBaseUrlForManager(manager: BrowserManagerKind): string | undefined {
+  switch (manager) {
+    case 'gpm':
+      return process.env.GPM_API_BASE_URL;
+    case 'gpmglobal':
+      return process.env.GPMGLOBAL_API_BASE_URL;
+    case 'donut':
+      return process.env.DONUT_API_BASE_URL;
+  }
 }

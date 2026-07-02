@@ -24,9 +24,12 @@ const waitForLoadExpression = `(() => {
 
 const getPageInfoExpression = `JSON.stringify({ title: document.title, url: location.href })`;
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
+const DEFAULT_TIMEOUT_MS = 180000;
 const DEFAULT_TYPING_MIN_DELAY_MS = 35;
 const DEFAULT_TYPING_MAX_DELAY_MS = 140;
 const CURSOR_SPEED_SCALE = 1.7;
+const FILE_UPLOAD_TIMEOUT_MS = 60000;
+const FILE_UPLOAD_MAX_ATTEMPTS = 3;
 
 const KEY_NAMES: Record<string, string> = {
   backspace: 'Backspace',
@@ -83,7 +86,11 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
 
   async init(): Promise<void> {
     this.context = this.browser.contexts()[0] ?? await this.browser.newContext();
+    this.context.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+    this.context.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
     this.page = this.context.pages().find((page) => !page.isClosed()) ?? await this.context.newPage();
+    this.page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+    this.page.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
     await this.page.bringToFront().catch(() => {});
   }
 
@@ -193,20 +200,18 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
   }
 
   async waitForXPath(xpath: string, timeoutMs = 10000): Promise<boolean> {
-    return this.evaluate<boolean>(`(() => {
-      const xpath = ${JSON.stringify(xpath)};
-      const timeoutMs = ${JSON.stringify(timeoutMs)};
-      return new Promise((resolve) => {
-        const deadline = Date.now() + timeoutMs;
-        const check = () => {
-          const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-          if (node) return resolve(true);
-          if (Date.now() >= deadline) return resolve(false);
-          setTimeout(check, 200);
-        };
-        check();
-      });
-    })()`);
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      try {
+        if (await this.existsXPath(xpath)) return true;
+      } catch (error) {
+        if (!isNavigationContextError(error)) throw error;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await sleep(Math.min(200, remaining));
+    }
   }
 
   async clickXPath(xpath: string): Promise<void> {
@@ -229,8 +234,8 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
 
   async pasteTextXPath(xpath: string, text: string): Promise<void> {
     await runWithClipboardLock(async () => {
-      await writeHostClipboardText(text);
       await this.clickAndFocusXPath(xpath, 'typeable');
+      await writeHostClipboardText(text);
       const keyboard = this.requirePage().keyboard;
       await keyboard.down('Control');
       await keyboard.press('v');
@@ -295,7 +300,16 @@ export class PlaywrightPageAutomation implements BrowserPageAutomation {
     const absolutePath = resolve(filePath);
     const file = await stat(absolutePath);
     if (!file.isFile()) throw new Error(`Upload path is not a file: ${absolutePath}`);
-    await this.requirePage().locator(`xpath=${xpath}`).first().setInputFiles(absolutePath);
+
+    for (let attempt = 1; attempt <= FILE_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await this.requirePage().locator(`xpath=${xpath}`).first().setInputFiles(absolutePath, { timeout: FILE_UPLOAD_TIMEOUT_MS });
+        return;
+      } catch (error) {
+        if (attempt === FILE_UPLOAD_MAX_ATTEMPTS || !isRetryableUploadError(error)) throw error;
+        await sleep(500);
+      }
+    }
   }
 
   async countInteractiveElements(): Promise<InteractiveElementsResult> {
@@ -471,10 +485,16 @@ function wrapAsyncJs(script: string): string {
   return `(async () => {\n${script}\n})()`;
 }
 
+function isNavigationContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation/i.test(message);
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation|locator\.setInputFiles|Timeout .* exceeded|Target page, context or browser has been closed|frame was detached|Element is not an HTMLInputElement/i.test(message);
+}
+
 function splitGraphemes(text: string): string[] {
-  const segmenter = typeof Intl.Segmenter === 'function'
-    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-    : undefined;
-  if (!segmenter) return Array.from(text);
-  return Array.from(segmenter.segment(text), (item) => item.segment);
+  return Array.from(text);
 }

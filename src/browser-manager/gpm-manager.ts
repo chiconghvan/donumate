@@ -43,11 +43,11 @@ export class GpmLoginManager implements BrowserProfileManager {
   }
 
   async launchProfile(profileId: string, options: BrowserLaunchOptions): Promise<BrowserLaunchResult> {
-    const params = new URLSearchParams();
-    if (options.headless) params.set('addination_args', '--headless');
-    if (options.winSize) params.set('win_size', options.winSize);
+    const query: string[] = [];
+    if (options.headless) query.push('addination_args=--headless');
+    if (options.winSize) query.push(`win_size=${encodeURIComponent(options.winSize)}`);
 
-    const qs = params.toString();
+    const qs = query.join('&');
     const data = await this.request(`/api/v3/profiles/start/${encodeURIComponent(profileId)}${qs ? `?${qs}` : ''}`, { method: 'GET' });
     const startData = this.unwrapData(data) as GpmStartData;
     const remoteDebuggingPort = this.remoteDebuggingPort(startData.remote_debugging_address);

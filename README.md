@@ -1,11 +1,11 @@
 # Donumate
 
-Donumate is a focused GPM Automate `.gscript` runner for Donut Browser and GPMLogin profiles.
+Donumate is a focused GPM Automate `.gscript` runner for Donut Browser, GPMLogin, and GPMGlobal profiles.
 
 Current scope is intentionally small:
 
 - Run GPMAutomateEditor `.gscript` JSON files.
-- Launch and clean up browser profiles through Donut Browser or GPMLogin APIs.
+- Launch and clean up browser profiles through Donut Browser, GPMLogin, or GPMGlobal APIs.
 - Drive browser pages through WebDriver BiDi, with Playwright/CDP support for managers that expose CDP.
 - Keep dev mode interactive with Ink TUI.
 - Keep packaged Windows exe mode readline-based and free of Ink/React runtime UI.
@@ -84,17 +84,17 @@ Run:
 .\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
-Exe mode uses readline prompts instead of Ink. It still uses the same `.gscript`, Bidi, Playwright, Donut, and GPMLogin runtime code as dev mode.
+Exe mode uses readline prompts instead of Ink. It still uses the same `.gscript`, Bidi, Playwright, Donut, GPMLogin, and GPMGlobal runtime code as dev mode.
 
 ## CLI Options
 
 ```text
---manager <donut|gpm>       Browser manager, default donut
+--manager <donut|gpm|gpmglobal> Browser manager, default donut
 --api <url>                 Browser manager API base URL
 --token <token>             Donut Browser API bearer token
 --profile <profile-id>      Profile ID only; skips profile picker
 --headless                  Launch profile headless
---win-size <width,height>   GPMLogin browser window size, for example 800,1000
+--win-size <width,height>   GPMLogin/GPMGlobal browser window size, for example 800,1000
 --connect-timeout <ms>      BiDi/CDP connect timeout, default 30000
 --command-timeout <ms>      Runtime command timeout, default 15000
 --script <path>             GPMAutomateEditor .gscript path
@@ -108,6 +108,12 @@ Run with GPMLogin:
 
 ```bash
 donumate_v<version>.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+```
+
+Run with GPMGlobal:
+
+```bash
+donumate_v<version>.exe run --manager gpmglobal --api http://127.0.0.1:9495 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with Donut Browser:
@@ -160,7 +166,7 @@ Build outputs:
 ```text
 src/cli.ts                    CLI entrypoint
 src/config/                   CLI/env config loading
-src/browser-manager/          Donut/GPMLogin profile manager abstraction
+src/browser-manager/          Donut/GPMLogin/GPMGlobal profile manager abstraction
 src/donut/                    Donut API client and profile picker helpers
 src/bidi/                     WebDriver BiDi client and command types
 src/runtime/gscript/          GPMAutomateEditor .gscript parser/executor/actions

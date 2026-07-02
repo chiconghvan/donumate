@@ -47,8 +47,8 @@ function parseInputOverrides(values: string[] | undefined): Record<string, strin
 }
 
 function parseManager(value: string): BrowserManagerKind {
-  if (value === 'donut' || value === 'gpm') return value;
-  throw new Error(`Invalid --manager value "${value}". Expected donut or gpm.`);
+  if (value === 'donut' || value === 'gpm' || value === 'gpmglobal') return value;
+  throw new Error(`Invalid --manager value "${value}". Expected donut, gpm, or gpmglobal.`);
 }
 
 function validateWinSize(value: string | undefined): string | undefined {
@@ -74,14 +74,14 @@ async function selectRootAction(): Promise<RootAction | undefined> {
 
 function addCommonOptions(cmd: Command): Command {
   return cmd
-    .option('--manager <manager>', 'Browser manager: donut or gpm (default: donut)', parseManager)
-    .option('--api <url>', 'Browser manager API base URL (default: Donut http://127.0.0.1:10108, GPM http://127.0.0.1:19995)')
+    .option('--manager <manager>', 'Browser manager: donut, gpm, or gpmglobal (default: donut)', parseManager)
+    .option('--api <url>', 'Browser manager API base URL (default: Donut http://127.0.0.1:10108, GPM http://127.0.0.1:19995, GPMGlobal http://127.0.0.1:9495)')
     .option('--token <token>', 'Donut API bearer token')
     .option('--profile <profile-id>', 'Skip interactive profile selection')
     .option('--headless', 'Launch profile headless')
-    .option('--win-size <width,height>', 'GPMLogin browser window size (e.g. 800,1000)')
+    .option('--win-size <width,height>', 'GPMLogin/GPMGlobal browser window size (e.g. 800,1000)')
     .option('--connect-timeout <ms>', 'BiDi connect timeout in ms (default: 30000)')
-    .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 15000)')
+    .option('--command-timeout <ms>', 'BiDi command timeout in ms (default: 180000)')
     .option('--script <path>', 'GPM Automate .gscript path')
     .option('--input <key=value>', 'Set script input; repeat for multiple (e.g. --input url=https://x --input count=5)', collectInput, [])
     .option('--minimal-log', 'Show minimal runtime logs');

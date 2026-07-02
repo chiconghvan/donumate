@@ -9,6 +9,7 @@ Current supported product surface:
 - `.gscript` runtime only.
 - Donut Browser profile launch/list/get/close.
 - GPMLogin profile launch/list/get/close.
+- GPMGlobal profile launch/list/get/close.
 - WebDriver BiDi page automation.
 - Playwright/CDP page automation where profile manager exposes CDP.
 - Dev CLI with Ink TUI.
@@ -265,7 +266,7 @@ release/                      generated Windows exe output
 
 Keep supported options aligned with `cli-guide.md`:
 
-- `--manager <donut|gpm>`
+- `--manager <donut|gpm|gpmglobal>`
 - `--api <url>`
 - `--token <token>`
 - `--profile <profile-id>`

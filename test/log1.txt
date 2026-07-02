@@ -1,0 +1,152 @@
+Log Output - test: Auto Post v4
+Close
+[runner] Run id: 49008a9d-1974-4c72-a305-09501e826400
+[runner] Spawning: E:\Code\donumate\release\donumate_v0.5.6.exe --script E:\OneDrive\0. Threads\GPM Project\Auto Post Threads v4\src.gscript --manager gpm --api http://127.0.0.1:19995 --profile 869f74d0-4bc2-4ebe-a7e8-d8fcb4b8b7ef --input port=8089 --input isChange=Yes --input avatarFolder=C:\Users\PC\Desktop\Avatar --minimal-log
+
+[runner] Process exited with code: Some(0)
+[stdout] [2J[H[36m  Profile: 2205.73[0m
+[stdout] [36m[02/07/2026 - 09:13:52] Normal Block - Before browser opened[0m
+[stdout] [36m[02/07/2026 - 09:13:52] action1 - Threads Monitor Port[0m
+[stdout] [36m[02/07/2026 - 09:13:52] set port = "8089"[0m
+[stdout] [36m[02/07/2026 - 09:13:52] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:13:52] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/profile-init"[0m
+[stdout] [36m[02/07/2026 - 09:13:52] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:13:52] httpRequest body="{\r\n  \"action_name\": \"post_status\", \r\n  \"profileName\": \"2205.73\",\r\n  \"proxy\": \"sp22v3-vn03.proxy.mkvn.net:46326:v3-1326-200846:UPCDL\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:13:54] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:13:52.961747+07:00\",\"proxyStatus\":\"live\",\"proxyReason\":\"connected to www.threads.com:443 (265174 bytes), seq=112 time=0.972 s\"..."[0m
+[stdout] [36m[02/07/2026 - 09:13:54] action1 - Change Avatar Threads đối với các acc chưa có avatart không?[0m
+[stdout] [36m[02/07/2026 - 09:13:54] set isChange = "Yes"[0m
+[stdout] [36m[02/07/2026 - 09:13:54] action1 - Nhập đường dẫn Folder chứa avatar[0m
+[stdout] [36m[02/07/2026 - 09:13:54] set avatarFolder = "C:\\Users\\PC\\Desktop\\Avatar"[0m
+[stdout] [36m[02/07/2026 - 09:13:54] action72[0m
+[stdout] [36m[02/07/2026 - 09:13:54] action4[0m
+[stdout] [36m[02/07/2026 - 09:13:54] action3[0m
+[stdout] [36m  Launch profile attempt 1/3...[0m
+[stdout] [36m  Browser ready (remote debugging port=49868)[0m
+[stdout] [36m  Waiting 6000ms for profile startup before connecting...[0m
+[stdout] [2J[H[36m[02/07/2026 - 09:14:01] Normal Block - Main logic[0m
+[stdout] [36m[02/07/2026 - 09:14:01] executeJs - Get Time[0m
+[stdout] [36m[02/07/2026 - 09:14:01] set timeRun = "[02/07 09:14]"[0m
+[stdout] [36m[02/07/2026 - 09:14:01] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:01] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:01] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:01] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Go to Threads\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:01] httpRequest response status=422 ok=false body="{\"ok\":false,\"detail\":[{\"type\":\"string_too_short\",\"loc\":[\"body\",\"post_status\",\"postId\"],\"msg\":\"String should have at least 1 character\",\"input\":\"\",\"ctx\":{\"min_length\":1}}]}"[0m
+[stdout] [36m[02/07/2026 - 09:14:01] goto - Go to Threads[0m
+[stdout] [36m[02/07/2026 - 09:14:01] url "https://www.threads.com/"[0m
+[stdout] [36m[02/07/2026 - 09:14:05] action42[0m
+[stdout] [36m[02/07/2026 - 09:14:05] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:05] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:05] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:05] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Checking Suspended\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:05] httpRequest response status=422 ok=false body="{\"ok\":false,\"detail\":[{\"type\":\"string_too_short\",\"loc\":[\"body\",\"post_status\",\"postId\"],\"msg\":\"String should have at least 1 character\",\"input\":\"\",\"ctx\":{\"min_length\":1}}]}"[0m
+[stdout] [36m[02/07/2026 - 09:14:05] For Block - Try Reload: start=0, end=3, step=1[0m
+[stdout] [36m[02/07/2026 - 09:14:05] waitXPath - Wait Load NewsFeed[0m
+[stdout] [36m[02/07/2026 - 09:14:05] wait xpath "(//div[@data-pressable-container=\"true\"]/ancestor::div[3])[2]" timeout=30000ms[0m
+[stdout] [36m[02/07/2026 - 09:14:12] Else Block[0m
+[stdout] [36m[02/07/2026 - 09:14:12] action5[0m
+[stdout] [36m[02/07/2026 - 09:14:12] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:12] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:12] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:12] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Press Post button\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:12] httpRequest response status=422 ok=false body="{\"ok\":false,\"detail\":[{\"type\":\"string_too_short\",\"loc\":[\"body\",\"post_status\",\"postId\"],\"msg\":\"String should have at least 1 character\",\"input\":\"\",\"ctx\":{\"min_length\":1}}]}"[0m
+[stdout] [36m[02/07/2026 - 09:14:12] Normal Block - Change Avatar[0m
+[stdout] [36m[02/07/2026 - 09:14:12] getAttribute[0m
+[stdout] [36m[02/07/2026 - 09:14:12] click - Press New Post[0m
+[stdout] [36m[02/07/2026 - 09:14:17] waitXPath - Wait Post Dialog[0m
+[stdout] [36m[02/07/2026 - 09:14:17] wait xpath "//div[@role=\"textbox\"]/.//p" timeout=20000ms[0m
+[stdout] [36m[02/07/2026 - 09:14:20] action7[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Find Content\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest response status=422 ok=false body="{\"ok\":false,\"detail\":[{\"type\":\"string_too_short\",\"loc\":[\"body\",\"post_status\",\"postId\"],\"msg\":\"String should have at least 1 character\",\"input\":\"\",\"ctx\":{\"min_length\":1}}]}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action1[0m
+[stdout] [36m[02/07/2026 - 09:14:21] set searchContent = "pending"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] While Block - Lấy bài viết từ database: condition=$searchContent=pending[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest method=GET url="http://127.0.0.1:8089/v1/content/next-post?profile=2205.73"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest response status=200 ok=true body="{\"ok\":true,\"post\":{\"id\":26406,\"content\":\"Hóa ra đi cảnh là cái vibe này, clown mode bật max công suất 🤡\",\"comment\":\"Đây nè s.shopee.vn/60NCQ5xZiL\",\"media_path\":\"E:\\\\Threads\\\\Conte..."[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action10[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action10[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action10[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action10[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action1 - Media Folder[0m
+[stdout] [36m[02/07/2026 - 09:14:21] set mediaFolder = "E:\\Threads\\Content\\2026\\27.3\\950"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action23 - Kiểm tra xem có folder media không[0m
+[stdout] [36m[02/07/2026 - 09:14:21] If Block - Có media[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action23 - Check New Content Media[0m
+[stdout] [36m[02/07/2026 - 09:14:21] If Block - New Content[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action72 - Get All Content Media[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action4 - Count Media file[0m
+[stdout] [36m[02/07/2026 - 09:14:21] If Block - Kiểm tra media content[0m
+[stdout] [36m[02/07/2026 - 09:14:21] executeJs - Content Length[0m
+[stdout] [36m[02/07/2026 - 09:14:21] set contentLength = 63[0m
+[stdout] [36m[02/07/2026 - 09:14:21] If Block - Kiểm tra content length[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action1[0m
+[stdout] [36m[02/07/2026 - 09:14:21] set searchContent = "done"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] Normal Block - New Ver[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Start Posting\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:14:21.562972+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action23[0m
+[stdout] [36m[02/07/2026 - 09:14:21] executeJs - Xóa bớt chỉ để 5 link aff[0m
+[stdout] [36m[02/07/2026 - 09:14:21] set comment = "Đây nè s.shopee.vn/60NCQ5xZiL"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] Else Block - New Content[0m
+[stdout] [36m[02/07/2026 - 09:14:21] Normal Block - Upload Content[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action72 - Get All Content Media[0m
+[stdout] [36m[02/07/2026 - 09:14:21] action4 - Count Media file[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Input Content\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:14:21.577963+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:21] pasteText - Input Content[0m
+[stdout] [36m[02/07/2026 - 09:14:26] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:14:26] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:14:26] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:26] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Upload Media\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:14:26] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:14:26.780989+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:14:26] For Block - Upload Media file: start=0, end=2, step=1[0m
+[stdout] [36m[02/07/2026 - 09:14:26] fileUpload - Upload[0m
+[stdout] [36m[02/07/2026 - 09:14:56] fileUpload - Upload[0m
+[stdout] [36m[02/07/2026 - 09:15:00] action3[0m
+[stdout] [36m[02/07/2026 - 09:15:00] action1[0m
+[stdout] [36m[02/07/2026 - 09:15:00] set lastMedia = "E:\\Threads\\Content\\2026\\27.3\\950\\content\\1img1.jpg"[0m
+[stdout] [36m[02/07/2026 - 09:15:00] Normal Block - Add Comment[0m
+[stdout] [36m[02/07/2026 - 09:15:00] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:15:00] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:15:00] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:00] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Add Comment\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:15:00] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:15:00.726109+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:00] click - Click add cmt[0m
+[stdout] [36m[02/07/2026 - 09:15:05] waitXPath[0m
+[stdout] [36m[02/07/2026 - 09:15:05] wait xpath "(//div[@role=\"textbox\"]/.//p)[2]" timeout=10000ms[0m
+[stdout] [36m[02/07/2026 - 09:15:05] action72 - Get All Content Media[0m
+[stdout] [36m[02/07/2026 - 09:15:05] action4 - Count Media file[0m
+[stdout] [36m[02/07/2026 - 09:15:05] executeJs[0m
+[stdout] [36m[02/07/2026 - 09:15:05] set isVideo = false[0m
+[stdout] [36m[02/07/2026 - 09:15:05] If Block[0m
+[stdout] [36m[02/07/2026 - 09:15:05] If Block[0m
+[stdout] [36m[02/07/2026 - 09:15:05] fileUpload - Upload[0m
+[stdout] [36m[02/07/2026 - 09:15:08] pasteText - Input Comment[0m
+[stdout] [36m[02/07/2026 - 09:15:14] action7[0m
+[stdout] [36m[02/07/2026 - 09:15:19] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:15:19] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:15:19] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:19] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"pending\",\r\n  \"message\": \"Posting\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:15:19] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:15:19.125606+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:19] click - Click Post Button[0m
+[stdout] [36m[02/07/2026 - 09:15:21] waitXPath[0m
+[stdout] [36m[02/07/2026 - 09:15:21] wait xpath "//div[@data-visualcompletion=\"ignore\"]//span[text()=\"Xem\" or text()=\"View\"]" timeout=90000ms[0m
+[stdout] [36m[02/07/2026 - 09:15:39] If Block - Nếu đăng thành công[0m
+[stdout] [36m[02/07/2026 - 09:15:39] httpRequest[0m
+[stdout] [36m[02/07/2026 - 09:15:39] httpRequest method=POST url="http://127.0.0.1:8089/v1/events/action-status"[0m
+[stdout] [36m[02/07/2026 - 09:15:39] httpRequest headers="{\"Content-Type\":\"application/json\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:39] httpRequest body="{\r\n  \"action_name\": \"post_status\",\r\n  \"profileName\": \"2205.73\",\r\n  \"postId\": \"26406\",\r\n  \"status\": \"done\",\r\n  \"message\": \"Posted\"\r\n}"[0m
+[stdout] [36m[02/07/2026 - 09:15:39] httpRequest response status=200 ok=true body="{\"ok\":true,\"sessionId\":20,\"receivedAt\":\"2026-07-02T09:15:39.357816+07:00\"}"[0m
+[stdout] [36m[02/07/2026 - 09:15:39] action7[0m
+[stdout] [36mDone.[0m
+[stdout] [36mProfile cleaned up.[0m
+[stdout] [36m[02/07/2026 - 09:15:42] Normal Block - After browser closed[0m

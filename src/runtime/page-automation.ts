@@ -28,6 +28,8 @@ const VIRTUAL_KEYBOARD_ID = 'donut-virtual-keyboard';
 const VIRTUAL_MOUSE_CURSOR_ID = '__donut_virtual_mouse_cursor__';
 const CONTROL_KEY = '';
 const CURSOR_SPEED_SCALE = 1.7;
+const FILE_UPLOAD_TIMEOUT_MS = 60000;
+const FILE_UPLOAD_MAX_ATTEMPTS = 3;
 const KEY_CODES: Record<string, string> = {
   null: '\uE000',
   cancel: '\uE001',
@@ -222,20 +224,18 @@ export class PageAutomation implements BrowserPageAutomation {
 
   /** Wait until an XPath matches at least one element */
   async waitForXPath(xpath: string, timeoutMs = 10000): Promise<boolean> {
-    return this.evaluate<boolean>(`(() => {
-      const xpath = ${JSON.stringify(xpath)};
-      const timeoutMs = ${JSON.stringify(timeoutMs)};
-      return new Promise((resolve) => {
-        const deadline = Date.now() + timeoutMs;
-        const check = () => {
-          const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-          if (node) return resolve(true);
-          if (Date.now() >= deadline) return resolve(false);
-          setTimeout(check, 200);
-        };
-        check();
-      });
-    })()`);
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      try {
+        if (await this.existsXPath(xpath)) return true;
+      } catch (error) {
+        if (!isNavigationContextError(error)) throw error;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await sleep(Math.min(200, remaining));
+    }
   }
 
   /** Click first element matching XPath */
@@ -273,8 +273,8 @@ export class PageAutomation implements BrowserPageAutomation {
 
     await runWithClipboardLock(async () => {
       if (!this.contextId) throw new Error('Page not initialized. Call init() first.');
-      await writeHostClipboardText(text);
       await this.clickAndFocusXPath(xpath, 'typeable');
+      await writeHostClipboardText(text);
 
       try {
         await this.bidi.performActions(this.contextId, [
@@ -356,13 +356,21 @@ export class PageAutomation implements BrowserPageAutomation {
     const file = await stat(absolutePath);
     if (!file.isFile()) throw new Error(`Upload path is not a file: ${absolutePath}`);
 
-    const element = await this.bidi.evaluateSharedReference(this.contextId, `(() => {
-      const xpath = ${JSON.stringify(xpath)};
-      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      if (!(node instanceof HTMLInputElement) || node.type !== 'file') throw new Error('XPath must point to input[type=file].');
-      return node;
-    })()`);
-    await this.bidi.setFiles(this.contextId, element, [absolutePath]);
+    for (let attempt = 1; attempt <= FILE_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const element = await this.bidi.evaluateSharedReference(this.contextId, `(() => {
+          const xpath = ${JSON.stringify(xpath)};
+          const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if (!(node instanceof HTMLInputElement) || node.type !== 'file') throw new Error('XPath must point to input[type=file].');
+          return node;
+        })()`);
+        await this.bidi.setFiles(this.contextId, element, [absolutePath]);
+        return;
+      } catch (error) {
+        if (attempt === FILE_UPLOAD_MAX_ATTEMPTS || !isRetryableUploadError(error)) throw error;
+        await sleep(500);
+      }
+    }
   }
 
   /** Count all interactive elements (a, button, input, etc.) */
@@ -577,6 +585,16 @@ function wrapAsyncJs(script: string): string {
   return `(async () => {\n${script}\n})()`;
 }
 
+function isNavigationContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation/i.test(message);
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation|BiDi command timed out|no such frame|detached|target closed|XPath must point to input\[type=file\]/i.test(message);
+}
+
 function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[] {
   const result: BrowsingContextInfo[] = [];
   for (const context of contexts) {
@@ -587,9 +605,5 @@ function flattenContexts(contexts: BrowsingContextInfo[]): BrowsingContextInfo[]
 }
 
 function splitGraphemes(text: string): string[] {
-  const segmenter = typeof Intl.Segmenter === 'function'
-    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-    : undefined;
-  if (!segmenter) return Array.from(text);
-  return Array.from(segmenter.segment(text), (item) => item.segment);
+  return Array.from(text);
 }

@@ -1,32 +1,14 @@
-# Donumate Exe CLI Guide
+# Donumate Release Exe CLI Guide
 
-This guide covers the packaged Windows executable:
-
-```text
-release/donumate_v<version>.exe
-```
-
-The exe is built without Ink TUI. It uses readline/plain terminal prompts when an argument is missing. It runs the same `.gscript`, Bidi, Playwright, GPMLogin, and Donut Browser runtime as dev mode.
-
-## Build The Exe
-
-Install dependencies first:
-
-```bash
-pnpm install
-```
-
-Build:
-
-```bash
-pnpm build:exe
-```
-
-Output:
+This guide only covers the packaged Windows release executable:
 
 ```text
 release/donumate_v<version>.exe
 ```
+
+Use this guide after you already have `release/donumate_v<version>.exe` from a release build.
+
+The release exe uses readline/plain terminal prompts when an argument is missing. It runs GPMAutomateEditor `.gscript` files against Donut Browser, GPMLogin, or GPMGlobal browser profiles.
 
 Check help:
 
@@ -37,21 +19,15 @@ Check help:
 ## Basic Command
 
 ```bash
-.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
-```
-
-Equivalent root command:
-
-```bash
 .\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id>
 ```
 
-Use `run` for clarity in scripts and docs.
+Pass options directly to the exe root command.
 
 ## Full Syntax
 
 ```bash
-donumate_v<version>.exe run --script <file.gscript> --manager <donut|gpm> --api <url> --token <token> --profile <profile-id> --headless --win-size <width,height> --connect-timeout <ms> --command-timeout <ms> --input key=value --minimal-log
+donumate_v<version>.exe --script <file.gscript> --manager <donut|gpm|gpmglobal> --api <url> --token <token> --profile <profile-id> --headless --win-size <width,height> --connect-timeout <ms> --command-timeout <ms> --input key=value --minimal-log
 ```
 
 All options except `--input` appear at most once. `--input` can repeat.
@@ -71,18 +47,19 @@ Examples:
 
 If omitted, exe mode opens a readline script picker for `.gscript` files under `scripts/`.
 
-### `--manager <donut|gpm>`
+### `--manager <donut|gpm|gpmglobal>`
 
 Selects browser profile manager.
 
 ```bash
 --manager gpm
+--manager gpmglobal
 --manager donut
 ```
 
 Default is `donut`.
 
-Use `gpm` for GPMLogin local API. Use `donut` for Donut Browser local API.
+Use `gpm` for GPMLogin local API. Use `gpmglobal` for GPMGlobal local API. Use `donut` for Donut Browser local API.
 
 ### `--api <url>`
 
@@ -93,15 +70,19 @@ Defaults:
 ```text
 Donut Browser: http://127.0.0.1:10108
 GPMLogin:      http://127.0.0.1:19995
+GPMGlobal:     http://127.0.0.1:9495
 ```
 
 Examples:
 
 ```bash
 --api http://127.0.0.1:19995
+--api http://127.0.0.1:9495
 --api http://127.0.0.1:10108
 --api http://192.168.1.20:19995
 ```
+
+For GPMGlobal, pass host and port only. Donumate appends `/api/v1` internally. Do not include `/api/v1` unless you intentionally want to pass the full API root.
 
 ### `--token <token>`
 
@@ -113,7 +94,7 @@ Example:
 --manager donut --token <donut-api-token>
 ```
 
-GPMLogin normally does not use this option.
+GPMLogin and GPMGlobal normally do not use this option.
 
 ### `--profile <profile-id>`
 
@@ -138,12 +119,12 @@ Launches the profile headless when manager supports it.
 Example:
 
 ```bash
-.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --headless
+.\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --headless
 ```
 
 ### `--win-size <width,height>`
 
-Sets GPMLogin browser window size.
+Sets GPMLogin or GPMGlobal browser window size.
 
 Format must be two integers separated by comma.
 
@@ -153,7 +134,7 @@ Example:
 --win-size 800,1000
 ```
 
-This option is intended for GPMLogin. Donut Browser may ignore it depending API behavior.
+This option is intended for GPMLogin and GPMGlobal. Donut Browser may ignore it depending API behavior.
 
 ### `--connect-timeout <ms>`
 
@@ -213,7 +194,7 @@ Input values are parsed by the script input type:
 Example:
 
 ```bash
-.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input maxPosts=5
+.\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input maxPosts=5
 ```
 
 ### `--minimal-log`
@@ -223,7 +204,7 @@ Shows compact runtime logs.
 Example:
 
 ```bash
-.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --minimal-log
+.\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --minimal-log
 ```
 
 Use this for automation logs where each action should be short.
@@ -266,25 +247,45 @@ Use them inside script actions through normal variable interpolation supported b
 Run with default GPMLogin API:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with explicit API URL:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe --manager gpm --api http://127.0.0.1:19995 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run headless with window size:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --win-size 800,1000
+.\release\donumate_v<version>.exe --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --win-size 800,1000
 ```
 
 Run with inputs:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input keyword=donumate --input limit=10
+.\release\donumate_v<version>.exe --manager gpm --script .\scripts\auto-post-v4.gscript --profile <profile-id> --input keyword=donumate --input limit=10
+```
+
+## GPMGlobal Examples
+
+Run with default GPMGlobal API:
+
+```bash
+.\release\donumate_v<version>.exe --manager gpmglobal --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+```
+
+Run with explicit API URL:
+
+```bash
+.\release\donumate_v<version>.exe --manager gpmglobal --api http://127.0.0.1:9495 --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+```
+
+Run headless with window size:
+
+```bash
+.\release\donumate_v<version>.exe --manager gpmglobal --script .\scripts\auto-post-v4.gscript --profile <profile-id> --headless --win-size 800,1000
 ```
 
 ## Donut Browser Examples
@@ -292,13 +293,13 @@ Run with inputs:
 Run with default Donut API:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager donut --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe --manager donut --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 Run with token:
 
 ```bash
-.\release\donumate_v<version>.exe run --manager donut --api http://127.0.0.1:10108 --token <token> --script .\scripts\auto-post-v4.gscript --profile <profile-id>
+.\release\donumate_v<version>.exe --manager donut --api http://127.0.0.1:10108 --token <token> --script .\scripts\auto-post-v4.gscript --profile <profile-id>
 ```
 
 ## Script Lifecycle
@@ -323,7 +324,7 @@ Open the file in GPMAutomateEditor and export/save it again. Donumate expects GP
 
 ### Profile not found
 
-`--profile` must be profile ID, not profile name. Verify the ID in Donut Browser or GPMLogin.
+`--profile` must be profile ID, not profile name. Verify the ID in Donut Browser, GPMLogin, or GPMGlobal.
 
 ### API connection failed
 
@@ -333,6 +334,12 @@ For GPMLogin:
 
 ```bash
 --manager gpm --api http://127.0.0.1:19995
+```
+
+For GPMGlobal:
+
+```bash
+--manager gpmglobal --api http://127.0.0.1:9495
 ```
 
 For Donut Browser:
@@ -372,5 +379,5 @@ Pass all required script inputs with `--input` so command can run unattended.
 Example:
 
 ```bash
-.\release\donumate_v<version>.exe run --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input password=secret --minimal-log
+.\release\donumate_v<version>.exe --script .\scripts\auto-post-v4.gscript --manager gpm --profile <profile-id> --input username=alice --input password=secret --minimal-log
 ```

@@ -1,5 +1,6 @@
 import { DonutApiClient } from '../donut/api-client.js';
 import { DonutBrowserManager } from './donut-manager.js';
+import { GpmGlobalManager } from './gpmglobal-manager.js';
 import { GpmLoginManager } from './gpm-manager.js';
 import type { BrowserManagerKind, BrowserProfileManager } from './types.js';
 
@@ -13,6 +14,9 @@ export type CreateBrowserManagerOptions = {
 export function createBrowserManager(options: CreateBrowserManagerOptions): BrowserProfileManager {
   if (options.kind === 'gpm') {
     return new GpmLoginManager(options.apiBaseUrl, options.signal);
+  }
+  if (options.kind === 'gpmglobal') {
+    return new GpmGlobalManager(options.apiBaseUrl, options.signal);
   }
   return new DonutBrowserManager(new DonutApiClient(options.apiBaseUrl, options.apiToken, options.signal));
 }

@@ -1,6 +1,6 @@
 import type { ApiProfile, RunProfileResponse } from '../donut/api-types.js';
 
-export type BrowserManagerKind = 'donut' | 'gpm';
+export type BrowserManagerKind = 'donut' | 'gpm' | 'gpmglobal';
 
 export type BrowserLaunchOptions = {
   headless: boolean;

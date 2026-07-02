@@ -1,5 +1,5 @@
 export type AppConfig = {
-  manager: 'donut' | 'gpm';
+  manager: 'donut' | 'gpm' | 'gpmglobal';
   apiBaseUrl: string;
   apiToken?: string;
   profileId?: string;
